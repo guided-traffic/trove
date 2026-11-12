@@ -21,9 +21,9 @@ describe('Policy list (R-UI-027)', () => {
   });
 
   it('R-UI-027 the principal query parameter filters the list', async () => {
-    const { root } = await renderScreen(PolicyList, { inputs: { principal: 'anonymous' } });
+    const { root } = await renderScreen(PolicyList, { inputs: { principal: 'user:nobody' } });
     expect(root.textContent).toContain('No policy matches');
-    expect(root.querySelector<HTMLInputElement>('input[name="principal"]')!.value).toBe('anonymous');
+    expect(root.querySelector<HTMLInputElement>('input[name="principal"]')!.value).toBe('user:nobody');
   });
 });
 

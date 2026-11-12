@@ -15,6 +15,7 @@ import { AuthSettingsApi, HttpAuthSettingsApi } from './auth-settings-api';
 import { HttpPolicyApi, HttpRolesApi, PolicyApi, RolesApi } from './authz-api';
 import { HttpIdentityApi, IdentityApi } from './identity-api';
 import { HttpProjectsApi, ProjectsApi } from './projects-api';
+import { HttpVisibilityApi, VisibilityApi } from './visibility-api';
 import { DraftPolicyExplainer, PolicyExplainer } from './policy-explainer';
 import { HttpSessionsApi, SessionsApi } from './sessions-api';
 import { HttpTokensApi, TokensApi } from './tokens-api';
@@ -62,6 +63,7 @@ export function provideApiServices(): Provider[] {
     { provide: PolicyApi, useClass: HttpPolicyApi },
     { provide: RolesApi, useClass: HttpRolesApi },
     { provide: ProjectsApi, useClass: HttpProjectsApi },
+    { provide: VisibilityApi, useClass: HttpVisibilityApi },
     { provide: PolicyExplainer, useClass: DraftPolicyExplainer },
     // <<< M1 ui-b
     // >>> M1 ui-a

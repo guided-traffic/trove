@@ -70,8 +70,6 @@ export function describeAccessProblem(code: string | null): string | null {
       return $localize`:@@problem.ci_token_restricted:A token issued to a pipeline cannot do this.`;
     case 'not_a_token':
       return $localize`:@@problem.not_a_token:The current credential is not a token.`;
-    case 'anonymous_not_allowed':
-      return $localize`:@@problem.anonymous_not_allowed:Anonymous access is not allowed by the installation's configuration.`;
     case 'invalid_action':
       return $localize`:@@problem.invalid_action:An action is not valid.`;
     case 'unknown_principal':
@@ -82,12 +80,6 @@ export function describeAccessProblem(code: string | null): string | null {
       return $localize`:@@problem.unknown_format:A selector names a format that does not exist.`;
     case 'duplicate_principal':
       return $localize`:@@problem.duplicate_principal:A principal appears twice in the policy.`;
-    case 'anonymous_write_action':
-      return $localize`:@@problem.anonymous_write_action:The anonymous principal can only read.`;
-    case 'anonymous_dynamic_selector':
-      return $localize`:@@problem.anonymous_dynamic_selector:The anonymous principal needs named repositories, not patterns or classes.`;
-    case 'authenticated_write_action':
-      return $localize`:@@problem.authenticated_write_action:The group of all signed-in users can only read.`;
     case 'action_not_allowed':
       return $localize`:@@problem.action_not_allowed:This principal cannot hold this action.`;
     case 'virtual_action_not_applicable':
@@ -102,8 +94,14 @@ export function describeAccessProblem(code: string | null): string | null {
       return $localize`:@@problem.project_account_not_groupable:A service account of a project cannot be a member of a group.`;
     case 'project_not_empty':
       return $localize`:@@problem.project_not_empty:The project still has repositories or service accounts. Move or delete the repositories and delete the service accounts first.`;
+    case 'public_not_allowed':
+      return $localize`:@@problem.public_not_allowed:The installation's configuration admits no request without a credential, so nothing can be public.`;
+    case 'visibility_above_project':
+      return $localize`:@@problem.visibility_above_project:A repository cannot be more open than its project.`;
+    case 'visibility_wiki_above_artifacts':
+      return $localize`:@@problem.visibility_wiki_above_artifacts:The wiki cannot be more open than the artifacts.`;
     case 'principal_not_allowed':
-      return $localize`:@@problem.principal_not_allowed:Only users and groups can be members of a project. A service account, a CI mapping, anonymous and authenticated cannot.`;
+      return $localize`:@@problem.principal_not_allowed:Only users and groups can be members of a project. A service account, a CI mapping and the principals anonymous and authenticated cannot: a visibility level opens content to everyone instead.`;
     case 'secret_value_required':
       return $localize`:@@problem.secret_value_required:Enter the password or token of this upstream again.`;
     case 'outbound_path_restricted':

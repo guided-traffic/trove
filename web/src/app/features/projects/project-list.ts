@@ -14,6 +14,7 @@ import { PagedResource, asApiError } from '../../shared/paged-resource';
 import { DataTable, TableColumn, TableSort } from '../../shared/ui/data-table';
 import { FilterCategory, FilterPanel, FilterToggle } from '../../shared/ui/filter-panel';
 import { formatSize } from '../packages/format-size';
+import { VisibilityIcon, levelName } from '../../shared/ui/visibility-level';
 import { ProjectDialog } from './project-dialog';
 import { PageHeader } from '../../shared/ui/page-header';
 
@@ -24,7 +25,7 @@ import { PageHeader } from '../../shared/ui/page-header';
  */
 @Component({
   selector: 'trove-project-list',
-  imports: [PageHeader, RouterLink, DataTable, ErrorNotice, FilterCategory, FilterPanel, FilterToggle, Needs, TextField],
+  imports: [PageHeader, RouterLink, DataTable, ErrorNotice, FilterCategory, FilterPanel, FilterToggle, Needs, TextField, VisibilityIcon],
   template: `
     <trove-page-header heading="Projects" i18n-heading="@@projects.heading">
       <button actions class="btn btn-confirm"
@@ -84,6 +85,7 @@ import { PageHeader } from '../../shared/ui/page-header';
             <tr>
               <th scope="row"><a [routerLink]="['/projects', p.key]" translate="no">{{ p.key }}</a></th>
               <td>{{ p.displayName }}</td>
+              <td class="level"><trove-visibility-icon [level]="p.visibility" />{{ levelText(p.visibility) }}</td>
               <td class="wrap" translate="no">{{ ownerSummary(p) }}</td>
               <td>{{ p.members }}</td>
               <td>{{ p.repositories }}</td>
@@ -113,6 +115,7 @@ export class ProjectList {
   protected readonly session = inject(SessionStore);
 
   protected readonly size = formatSize;
+  protected readonly levelText = levelName;
   protected readonly list = new PagedResource<Project>();
   protected readonly q = signal('');
   protected readonly panelOpen = signal(false);
@@ -125,6 +128,7 @@ export class ProjectList {
   protected readonly columns: readonly TableColumn[] = [
     { id: 'key', label: $localize`:@@projects.col.key:Key`, sortable: true },
     { id: 'name', label: $localize`:@@projects.col.name:Display name` },
+    { id: 'visibility', label: $localize`:@@projects.col.visibility:Visibility` },
     { id: 'owners', label: $localize`:@@projects.col.owners:Owners` },
     { id: 'members', label: $localize`:@@projects.col.members:Members` },
     { id: 'repositories', label: $localize`:@@projects.col.repositories:Repositories` },

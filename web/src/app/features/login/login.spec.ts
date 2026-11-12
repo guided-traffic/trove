@@ -145,15 +145,15 @@ describe('Sign-in screen', () => {
 
   it('R-AUTH-011 a re-authentication explains why and offers no way around it', async () => {
     const { root } = await open('/login?returnTo=%2Fprofile%2Ftokens&reauth=1', (api) => {
-      api.optionsResult = { ...api.optionsResult, anonymousAccess: true };
+      api.optionsResult = { ...api.optionsResult, publicContent: true };
     });
     expect(root.querySelector('p[role="status"].reauth')?.textContent).toContain('needs a recent sign-in');
     expect(root.textContent).not.toContain('Continue without signing in');
   });
 
-  it('R-UI-004 with anonymous access on the screen offers to continue without signing in', async () => {
+  it('R-UI-057 with public content on the screen offers to continue without signing in', async () => {
     const { root } = await open('/login?returnTo=%2Fbrowse', (api) => {
-      api.optionsResult = { ...api.optionsResult, anonymousAccess: true };
+      api.optionsResult = { ...api.optionsResult, publicContent: true };
     });
     const link = [...root.querySelectorAll('a')].find((a) => a.textContent?.includes('Continue without signing in'));
     expect(link?.getAttribute('href')).toBe('/browse');

@@ -10,6 +10,7 @@ import { SessionStore } from '../../core/session-store';
 import { Confirm } from '../../shared/confirm-dialog';
 import { ConflictResolver } from '../../shared/conflict-dialog';
 import { TextField } from '../../shared/access/fields';
+import { Checkbox } from '../../shared/ui/checkbox';
 import { fieldErrorAt } from '../../shared/field-errors';
 import { asApiError } from '../../shared/paged-resource';
 import { Needs } from '../../shared/access/needs';
@@ -30,7 +31,7 @@ import { PageHeader } from '../../shared/ui/page-header';
  */
 @Component({
   selector: 'trove-user-detail',
-  imports: [PageHeader, DatePipe, RouterLink, ErrorNotice, Needs, PrincipalRoles, Disclosure, TextField, TokenManager, TroveAvatar],
+  imports: [PageHeader, DatePipe, RouterLink, Checkbox, ErrorNotice, Needs, PrincipalRoles, Disclosure, TextField, TokenManager, TroveAvatar],
   templateUrl: './user-detail.html',
   styleUrl: '../../shared/access/access.scss',
   styles: `
@@ -81,9 +82,11 @@ export class UserDetail {
   protected readonly loadError = signal<ApiError | null>(null);
   protected readonly actionError = signal<ApiError | null>(null);
   protected readonly editError = signal<ApiError | null>(null);
+  protected readonly externalError = signal<ApiError | null>(null);
   protected readonly sessions = signal<readonly UserSession[] | null>(null);
   protected readonly sessionError = signal<ApiError | null>(null);
 
+  protected readonly external = signal(false);
   protected readonly email = signal('');
   protected readonly displayName = signal('');
   protected readonly newGroup = signal('');
@@ -105,6 +108,14 @@ export class UserDetail {
     const u = this.user();
     return u !== null && ((u.email ?? '') !== this.email().trim() || (u.displayName ?? '') !== this.displayName().trim());
   });
+
+  /** The external flag differs from the stored user: its own Save changes waits for it (Q-UI-232). */
+  protected readonly externalDirty = computed(() => {
+    const u = this.user();
+    return u !== null && u.external !== this.external();
+  });
+  /** The break-glass account is never external (R-AUTH-044); every other user's flag is edited with `identities:write`. */
+  protected readonly canEditExternal = this.canEdit;
 
   constructor() {
     effect(() => {
@@ -130,6 +141,7 @@ export class UserDetail {
     this.user.set(loaded.value);
     this.email.set(loaded.value.email ?? '');
     this.displayName.set(loaded.value.displayName ?? '');
+    this.external.set(loaded.value.external);
   }
 
   private async loadSessions(): Promise<void> {
@@ -168,6 +180,31 @@ export class UserDetail {
         return result.outcome === 'saved';
       },
       $localize`:@@user.saved:User saved.`,
+    );
+  }
+
+  /** The flag has a save of its own (R-UI-056); recent authentication applies (R-API-007), so a 401 is answered by the sign-in dialog. */
+  protected async saveExternal(event: Event): Promise<void> {
+    event.preventDefault();
+    const u = this.user();
+    if (!u || u.external === this.external()) return;
+    const patch: UserPatch = { external: this.external() };
+    await this.run(
+      this.externalError,
+      async () => {
+        const result = await this.conflicts.save<User>({
+          etag: this.etag,
+          patch,
+          send: (etag) => this.api.updateUser(u.username, patch, etag),
+          reload: () => this.api.user(u.username),
+        });
+        if (result.outcome === 'dismissed') return false;
+        this.etag = result.current.etag;
+        this.user.set(result.current.value);
+        this.external.set(result.current.value.external);
+        return result.outcome === 'saved';
+      },
+      $localize`:@@user.external-saved:External flag saved.`,
     );
   }
 

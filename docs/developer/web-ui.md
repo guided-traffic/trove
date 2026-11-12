@@ -664,7 +664,7 @@ feeds the two live regions of `<trove-notices>`: `status` is polite, `alert` is 
 **Session.** `SessionStore` holds `whoami`, `authz/me`, the 60-second check cache (`check()` batches 100 per call), the `ended` and
 `reauthRequired` flags. `signOut()` posts `/auth/logout`, goes to the returned `redirectTo` or `/logged-out`, and tells other tabs over a
 `BroadcastChannel`. `authGuard` loads the session and sends an unauthenticated caller to `/login?returnTo=<route>` unless
-`login-options` allows anonymous access. `safeReturnTo` keeps only server-relative paths. The sign-in screen builds
+`login-options` reports `publicContent`. `safeReturnTo` keeps only server-relative paths. The sign-in screen builds
 `return_to=<base path><route>` from the path of the resolved `document.baseURI` (R-AUTH-009): `/ui/en/…` and `/ui/de/…` in the
 builds per locale, `/ui/…` on the dev server (UI-A-49); it appends `purpose=reauth` for a re-authentication.
 `has(capability)` asks for a capability; `hasRole(role)` asks for a system role of `authz/me` and is for the operations the server checks as a role, not as a capability (creating and rotating the token of a service account needs the administrator role). A control follows what the handler checks (R-UI-005): never a capability that merely sounds related.
@@ -833,7 +833,7 @@ R-UI-024 to R-UI-027, R-UI-029 to R-UI-031, R-UI-042 to R-UI-045; decisions Q-UI
 | `/admin/roles` | `roles/` `RoleBindings`: the five roles, holders, bind and unbind with the last-administrator guard | R-UI-024 | `roles:read` |
 | `/admin/permissions`, `/new`, `/:name`, `/:project/:name` | `permissions/`: `PolicyList`; `PolicyEditor` (one page for create and edit, validation preview, pattern tester, "Try it", diff before save) | R-UI-027 | `policies:read` |
 | `/admin/tokens` | `tokens/` `TokenAdmin`: filters, revoke one or selected, revoke by value | R-UI-030 | `tokens:read` |
-| `/admin/settings` (leads to `general`), `/admin/settings/auth` | The sidebar's group **Settings** holds **General** and **Authentication** (`navigation.ts`, Q-UI-326). `settings/` `AuthSettings`: anonymous access open at the top, token lifetimes with their ceilings and the read-only status as sections; one ETag, a `Save changes` per group that sends only its own members, `If-Match` ([Q-UI-222](../spec/api-and-ui.md#q-ui-222--which-settings-pages-are-one-column-now-and-what-a-sections-save-button-is-called)) | R-UI-031 | `settings:read` |
+| `/admin/settings` (leads to `general`), `/admin/settings/auth` | The sidebar's group **Settings** holds **General** and **Authentication** (`navigation.ts`, Q-UI-326). `settings/` `AuthSettings`: `newUsersExternal` open at the top, token lifetimes with their ceilings and the read-only status as sections; one ETag, a `Save changes` per group that sends only its own members, `If-Match` ([Q-UI-222](../spec/api-and-ui.md#q-ui-222--which-settings-pages-are-one-column-now-and-what-a-sections-save-button-is-called)) | R-UI-031 | `settings:read` |
 
 Services of `api/` (abstract class, HTTP implementation, fake in [api/testing/access-fakes.ts](../../web/src/app/api/testing/access-fakes.ts)); every shape is a
 `Schema<'…'>` of the generated document:
@@ -1178,6 +1178,20 @@ The settings form, the wizard step and the edit tab render the NuGet schema with
 | [shared/banner.ts](../../web/src/app/shared/banner.ts), [banner-text.ts](../../web/src/app/shared/banner-text.ts) | `<trove-banner>` in the shell and on the sign-in page; `parseBannerText` splits a message into text and `https` links, everything else stays text |
 
 Specs: [virtual-members.spec.ts](../../web/src/app/features/repositories/virtual-members.spec.ts), [general-settings.spec.ts](../../web/src/app/features/settings/general-settings.spec.ts), [banner-store.spec.ts](../../web/src/app/core/banner-store.spec.ts), [banner.spec.ts](../../web/src/app/shared/banner.spec.ts), [banner-text.spec.ts](../../web/src/app/shared/banner-text.spec.ts). The journeys `18-virtual-members.spec.ts` and `19-general-settings.spec.ts` run in CI on the kind cluster ([e2e.md](e2e.md#browser-journeys)); they were not run locally.
+
+## Visibility levels and the external flag (R-UI-053 to R-UI-057)
+
+| File | Responsibility |
+|---|---|
+| [shared/ui/visibility-level.ts](../../web/src/app/shared/ui/visibility-level.ts) | `<trove-visibility-level>` (the radio group with its sentences and reasons), `<trove-visibility-icon>`, `levelName`, `lowerLevel`, `isMoreOpen`, `aboveProjectReasons` (the options a repository cannot take in its project) and `publicUnavailableReason` |
+| [api/visibility-api.ts](../../web/src/app/api/visibility-api.ts) | `VisibilityApi`: `GET`, `PATCH /api/v1/settings/visibility` with `If-Match`; `ProjectsApi.setVisibility` is `PUT /api/v1/projects/{key}/visibility`; fakes `FakeVisibilityApi` and `FakeProjectsApi` in [fakes-projects.ts](../../web/src/app/api/testing/fakes-projects.ts) |
+| [general-settings.ts](../../web/src/app/features/settings/general-settings.ts) | The section Visibility: the default level, `Public` disabled while `publicAvailable` is false, what is public now with links, read-only for a caller without `security-settings:write` |
+| [project-settings.ts](../../web/src/app/features/projects/project-settings.ts), [project-dialog.ts](../../web/src/app/features/projects/project-dialog.ts) | The section Visibility of a project with its own save (an administrator only); lowering lists the repositories above the new level from the project's repository list and asks through `Confirm` (`items`), the answer's `lowered` is counted in the message; the create dialog presets the group to the default |
+| [repository-visibility.ts](../../web/src/app/features/repositories/repository-visibility.ts) | The block Visibility of a repository's Access tab: Artifacts and, for a format with `wiki: true`, Wiki; options above the project or the artifacts disabled with the reason; the wiki follows the artifacts down; the patch names the changed parts only and the levels are not part of `RepositoryForm`, so other unsaved edits stay; the wizard's basic step holds the artifacts group, preset to the lower of the default and the project's level |
+| [user-detail.ts](../../web/src/app/features/users/user-detail.ts), [user-list.ts](../../web/src/app/features/users/user-list.ts), [user-create-dialog.ts](../../web/src/app/features/users/user-create-dialog.ts) | The checkbox External user with its own save, the badge and the filter, the create dialog preset to `newUsersExternal` |
+| [projects-home.ts](../../web/src/app/features/projects/projects-home.ts), [core/project-context.ts](../../web/src/app/core/project-context.ts) | The start page lists the memberships first, then the other projects the level admits, with the filter "Your projects" (`membership=true`); the context also loads for the anonymous subject |
+
+The package page asks for no README unless `hasReadme` is true for the caller, and shows a format's documentation tabs only when `metadata.docs` is present (R-UI-057). Specs: [visibility-level.spec.ts](../../web/src/app/shared/ui/visibility-level.spec.ts), [visibility-settings.spec.ts](../../web/src/app/features/settings/visibility-settings.spec.ts), [project-visibility.spec.ts](../../web/src/app/features/projects/project-visibility.spec.ts), [repository-visibility.spec.ts](../../web/src/app/features/repositories/repository-visibility.spec.ts), [user-external.spec.ts](../../web/src/app/features/users/user-external.spec.ts). The journey `21-visibility.spec.ts` runs in the set `access-long` on the kind cluster ([e2e.md](e2e.md#browser-journeys)).
 
 ## The Ansible documentation screens
 

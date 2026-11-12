@@ -78,6 +78,7 @@ export const ADMIN_CAPABILITIES: readonly string[] = [
   'repositories:write-config',
   'settings:read',
   'settings:write',
+  'security-settings:write',
   'audit:read',
   'endpoints:read',
   'endpoints:write',
@@ -110,7 +111,7 @@ export class FakeSessionApi extends SessionApi {
 
   override async authzMe(): Promise<AuthzMe> {
     if (this.meResult instanceof ApiError) throw this.meResult;
-    return { roles: [], principals: [], projects: [], scope: null, epoch: 1, ...this.meResult };
+    return { roles: [], internal: true, principals: [], projects: [], scope: null, epoch: 1, ...this.meResult };
   }
 
   override async check(checks: readonly PermissionCheck[]): Promise<PermissionCheckAnswer> {
@@ -130,7 +131,7 @@ export class FakeLoginApi extends LoginApi {
       { id: 'corp', displayName: 'Corporate SSO', startUrl: '/auth/oidc/corp/start', available: true },
     ],
     localLogin: false,
-    anonymousAccess: false,
+    publicContent: false,
     autoRedirect: null,
   };
   localLogins: { username: string; password: string }[] = [];

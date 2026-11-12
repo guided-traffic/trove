@@ -17,7 +17,8 @@ describe('Authentication settings (R-UI-031)', () => {
   it('R-UI-031 shows the runtime values with their ceilings and the read-only status, and passes axe', async () => {
     const { root } = await renderScreen(AuthSettings);
     const t = text(root);
-    expect(t).toContain('Allow requests without a credential');
+    expect(t).toContain('New users are external');
+    expect(t).not.toContain('without a credential');
     expect(t).toContain('Ceiling from the configuration: 365 days');
     expect(t).toContain('Corporate SSO');
     expect(t).toContain('discovery document loaded');
@@ -74,19 +75,19 @@ describe('Authentication settings (R-UI-031)', () => {
   it('Q-UI-222 each group has its own Save changes: saving one sends only its members and keeps the other group\'s edits', async () => {
     const { fixture, root, get } = await renderScreen(AuthSettings);
     const api = get(AuthSettingsApi) as FakeAuthSettingsApi;
-    expect(saveButton(root, 'anonymous access').disabled).toBe(true);
+    expect(saveButton(root, 'new users are external').disabled).toBe(true);
     expect(saveTokens(root).disabled).toBe(true);
     root.querySelector<HTMLInputElement>('trove-checkbox input')!.click();
     typeInto(root, 'Default lifetime (days)', '30');
     await settle(fixture);
-    expect(saveButton(root, 'anonymous access').disabled).toBe(false);
+    expect(saveButton(root, 'new users are external').disabled).toBe(false);
     expect(saveTokens(root).disabled).toBe(false);
 
-    saveButton(root, 'anonymous access').click();
+    saveButton(root, 'new users are external').click();
     await settle(fixture);
     expect(api.patches).toHaveLength(1);
-    expect(api.patches[0]).toEqual({ patch: { anonymousAccess: true }, etag: '"100"' });
-    expect(saveButton(root, 'anonymous access').disabled).toBe(true);
+    expect(api.patches[0]).toEqual({ patch: { newUsersExternal: true }, etag: '"100"' });
+    expect(saveButton(root, 'new users are external').disabled).toBe(true);
     expect(saveTokens(root).disabled).toBe(false);
     expect(root.querySelector<HTMLInputElement>('input[name="patDefault"]')!.value).toBe('30');
 
@@ -95,19 +96,10 @@ describe('Authentication settings (R-UI-031)', () => {
     expect(api.patches[1]).toEqual({ patch: { tokens: { pat: { defaultTTLSeconds: 2_592_000 } } }, etag: '"101"' });
   });
 
-  it('R-AUTH-040 anonymous access cannot be switched on above the ceiling and says why', async () => {
-    const { root } = await renderScreen(AuthSettings, {
-      setup: (get) => {
-        const api = get(AuthSettingsApi) as FakeAuthSettingsApi;
-        const s = sampleAuthSettings();
-        api.stored = {
-          ...s,
-          settings: { ...s.settings, ceilings: { ...s.settings.ceilings, anonymousAllowed: false } },
-        };
-      },
-    });
+  it('R-AUTH-044 without settings:write the flag for new users is shown but cannot be changed', async () => {
+    const { root } = await renderScreen(AuthSettings, { capabilities: ['settings:read'] });
     expect(root.querySelector<HTMLInputElement>('trove-checkbox input')!.disabled).toBe(true);
-    expect(text(root)).toContain('does not allow anonymous access');
+    expect(text(root)).toContain('existing users keep their flag');
   });
 
   it('R-UI-042 a 412 opens the conflict dialog; Overwrite sends my patch with the ETag read now', async () => {

@@ -15,6 +15,8 @@ export type Project = Schema<'Project'>;
 export type ProjectInput = Schema<'ProjectInput'>;
 export type ProjectPrincipal = Schema<'ProjectPrincipal'>;
 export type ProjectRole = Schema<'ProjectRole'>;
+export type ProjectVisibilityResult = Schema<'ProjectVisibilityResult'>;
+export type VisibilityLevel = Schema<'VisibilityLevel'>;
 export type ProjectMember = Schema<'Member'>;
 /** A project the caller is a member of, with the role in force for the credential (`authz/me`). */
 export type Membership = Schema<'Membership'>;
@@ -29,6 +31,8 @@ export interface ProjectFilters {
   readonly q?: string;
   /** `key` (default) or `-key`. */
   readonly sort?: 'key' | '-key';
+  /** `true` keeps the projects the caller is a member of (R-UI-054). */
+  readonly membership?: boolean;
 }
 
 export abstract class ProjectsApi {
@@ -37,6 +41,15 @@ export abstract class ProjectsApi {
   abstract create(input: ProjectInput, idempotencyKey: string): Promise<Versioned<Project>>;
   /** `PUT` with the loaded `ETag`; the body needs the display name. */
   abstract replace(key: string, input: ProjectInput, etag: string): Promise<Versioned<Project>>;
+  /**
+   * `PUT /api/v1/projects/{key}/visibility` with the loaded `ETag` (R-API-057): the project after the change and the repositories the
+   * change lowered. Recent authentication applies.
+   */
+  abstract setVisibility(
+    key: string,
+    level: VisibilityLevel,
+    etag: string,
+  ): Promise<{ readonly project: Versioned<Project>; readonly lowered: ProjectVisibilityResult['lowered'] }>;
   abstract delete(key: string): Promise<void>;
   /** The members, users and groups, each with its role (Q-AUTHZ-207). */
   abstract members(key: string): Promise<readonly ProjectMember[]>;
@@ -74,6 +87,18 @@ export class HttpProjectsApi extends ProjectsApi {
 
   override async replace(key: string, input: ProjectInput, etag: string): Promise<Versioned<Project>> {
     return versioned(await this.client.put<Project>(`/api/v1/projects/${seg(key)}`, input, etag));
+  }
+
+  override async setVisibility(
+    key: string,
+    level: VisibilityLevel,
+    etag: string,
+  ): Promise<{ readonly project: Versioned<Project>; readonly lowered: ProjectVisibilityResult['lowered'] }> {
+    const r = await this.client.put<ProjectVisibilityResult>(`/api/v1/projects/${seg(key)}/visibility`, { level }, etag);
+    return {
+      project: { value: r.body.project, etag: r.etag ?? `"${r.body.project.version}"` },
+      lowered: r.body.lowered,
+    };
   }
 
   override async delete(key: string): Promise<void> {

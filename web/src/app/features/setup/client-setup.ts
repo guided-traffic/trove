@@ -1,3 +1,4 @@
+import { VisibilityIcon } from '../../shared/ui/visibility-level';
 import { repositoryCommands } from '../../core/project-links';
 import { DOCUMENT, NgTemplateOutlet } from '@angular/common';
 import {
@@ -54,7 +55,7 @@ export function fillToken(content: string, token: string | null): string {
  */
 @Component({
   selector: 'trove-client-setup',
-  imports: [TabGroup, TabPage, NgTemplateOutlet, RouterLink, CopyButton, AddressField, ErrorNotice, PageHeader, Disclosure],
+  imports: [TabGroup, TabPage, NgTemplateOutlet, RouterLink, CopyButton, AddressField, ErrorNotice, PageHeader, Disclosure, VisibilityIcon],
   templateUrl: './client-setup.html',
   styleUrl: './client-setup.scss',
 })

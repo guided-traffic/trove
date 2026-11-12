@@ -69,6 +69,8 @@ export function auditActionLabel(action: string): string {
       return $localize`:@@audit.action.authz.project.member_changed:Project member's role changed`;
     case 'authz.project.member_removed':
       return $localize`:@@audit.action.authz.project.member_removed:Project member removed`;
+    case 'authz.project.visibility_changed':
+      return $localize`:@@audit.action.authz.project.visibility_changed:Project visibility changed`;
     case 'authz.project.updated':
       return $localize`:@@audit.action.authz.project.updated:Project changed`;
     case 'authz.read.allowed':
@@ -243,6 +245,8 @@ export function auditActionLabel(action: string): string {
       return $localize`:@@audit.action.serviceaccount.disabled:Service account disabled`;
     case 'serviceaccount.updated':
       return $localize`:@@audit.action.serviceaccount.updated:Service account changed`;
+    case 'settings.visibility.changed':
+      return $localize`:@@audit.action.settings.visibility.changed:Default visibility changed`;
     case 'settings.auth.changed':
       return $localize`:@@audit.action.settings.auth.changed:Authentication settings changed`;
     case 'system.backup.completed':
@@ -289,6 +293,8 @@ export function auditActionLabel(action: string): string {
       return $localize`:@@audit.action.user.created:User created`;
     case 'user.deleted':
       return $localize`:@@audit.action.user.deleted:User deleted`;
+    case 'user.external_changed':
+      return $localize`:@@audit.action.user.external_changed:User's external flag changed`;
     case 'user.disabled':
       return $localize`:@@audit.action.user.disabled:User disabled`;
     case 'user.dormancy_warning':

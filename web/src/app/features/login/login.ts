@@ -116,7 +116,7 @@ import { LogoPreview } from './logo-preview';
             </ul>
           }
 
-          @if (o.anonymousAccess && reauth() !== '1') {
+          @if (o.publicContent && reauth() !== '1') {
             <p class="anonymous">
               <a [routerLink]="continuePath()" i18n="@@login.anonymous">Continue without signing in</a>
             </p>

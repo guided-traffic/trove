@@ -92,6 +92,7 @@ export function sampleUser(over: Partial<User> = {}): User {
     ],
     groupClaimMissing: null,
     avatarUrl: null,
+    external: false,
     lockedUntil: null,
     lastLoginAt: '2026-10-28T09:12:00Z',
     createdAt: '2026-09-01T08:00:00Z',
@@ -202,6 +203,8 @@ export class FakeIdentityApi extends IdentityApi {
     },
   ];
   failure: ApiError | null = null;
+  /** The `external` a user created without the member takes (the installation's `newUsersExternal`). */
+  newUsersExternal = false;
   keys: string[] = [];
   /** The `If-Match` of every guarded write, in order, for assertions. */
   readonly ifMatch: string[] = [];
@@ -245,7 +248,8 @@ export class FakeIdentityApi extends IdentityApi {
             (u) =>
               (!filters.q || u.username.includes(filters.q)) &&
               (!filters.status || u.status === filters.status) &&
-              (!filters.origin || u.origin === filters.origin),
+              (!filters.origin || u.origin === filters.origin) &&
+              (filters.external === undefined || u.external === filters.external),
           ),
           (u) => u.username,
           filters.sort,
@@ -268,6 +272,7 @@ export class FakeIdentityApi extends IdentityApi {
       username: body.username,
       email: body.email ?? null,
       displayName: body.displayName ?? null,
+      external: body.external ?? this.newUsersExternal,
       origin: 'admin',
       isAdmin: false,
       adminVia: [],
@@ -287,6 +292,7 @@ export class FakeIdentityApi extends IdentityApi {
       ...current,
       email: patch.email === undefined ? current.email : patch.email,
       displayName: patch.displayName === undefined ? current.displayName : patch.displayName,
+      external: patch.external ?? current.external,
     };
     this.userList = this.userList.map((u) => (u.username === username ? next : u));
     return { value: next, etag: this.etagOf(`user:${username}`) };
@@ -711,10 +717,9 @@ export function sampleAuthSettings(): LoadedAuthSettings {
   return {
     etag: '"100"',
     settings: {
-      anonymousAccess: false,
+      newUsersExternal: false,
       tokens: { pat: lifetimes, sat: lifetimes, expiryNoticeSeconds: 604_800 },
       ceilings: {
-        anonymousAllowed: true,
         tokens: { pat: lifetimes, sat: lifetimes, expiryNoticeSeconds: 604_800 },
       },
       status: {
@@ -756,7 +761,7 @@ export class FakeAuthSettingsApi extends AuthSettingsApi {
       etag: `"${Number.parseInt(this.stored.etag.replaceAll('"', ''), 10) + 1}"`,
       settings: {
         ...s,
-        anonymousAccess: patch.anonymousAccess ?? s.anonymousAccess,
+        newUsersExternal: patch.newUsersExternal ?? s.newUsersExternal,
         tokens: {
           pat: { ...s.tokens.pat, ...patch.tokens?.pat },
           sat: { ...s.tokens.sat, ...patch.tokens?.sat },

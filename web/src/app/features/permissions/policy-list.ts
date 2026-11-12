@@ -12,18 +12,16 @@ import { PageHeader } from '../../shared/ui/page-header';
 
 /** "Users: 2, groups: 3": the entries of a policy by kind of principal (R-UI-027). */
 export function principalSummary(policy: Pick<PermissionPolicy, 'entries'>): string {
-  const count = { user: 0, group: 0, sa: 0, special: 0 };
+  const count = { user: 0, group: 0, sa: 0 };
   for (const e of policy.entries) {
     if (e.principal.startsWith('user:')) count.user++;
     else if (e.principal.startsWith('group:')) count.group++;
     else if (e.principal.startsWith('sa:')) count.sa++;
-    else count.special++;
   }
   const parts: string[] = [];
   if (count.user) parts.push($localize`:@@policies.sum.users:Users: ${count.user}:count:`);
   if (count.group) parts.push($localize`:@@policies.sum.groups:Groups: ${count.group}:count:`);
   if (count.sa) parts.push($localize`:@@policies.sum.sas:Service accounts: ${count.sa}:count:`);
-  if (count.special) parts.push($localize`:@@policies.sum.special:Anonymous or all signed-in: ${count.special}:count:`);
   return parts.join(', ');
 }
 
@@ -36,7 +34,7 @@ export function actionSummary(policy: Pick<PermissionPolicy, 'entries'>): string
  * Permission policies (R-UI-027): name, description, principal summary, resources summary and
  * actions; filters by principal and repository in the filter panel; the name column sorts
  * through the API's `sort` parameter; cursor paging. The `principal` query parameter
- * opens the list filtered (the authentication settings link to `principal=anonymous`).
+ * opens the list filtered.
  */
 @Component({
   selector: 'trove-policy-list',
@@ -73,7 +71,7 @@ export class PolicyList {
     {
       id: 'principals',
       label: $localize`:@@policies.col.principals:Principals`,
-      help: $localize`:@@policies.help.principals:Who the policy grants to, counted by kind: users, groups, service accounts, and the special principals for anonymous and all signed-in callers.`,
+      help: $localize`:@@policies.help.principals:Who the policy grants to, counted by kind: users, groups and service accounts.`,
     },
     {
       id: 'resources',
@@ -90,7 +88,7 @@ export class PolicyList {
       this.principalFilter.set(this.principal() ?? '');
       this.repositoryFilter.set(this.repository() ?? '');
       this.projectFilter.set(this.project() ?? '');
-      // A link with a filter (the authentication settings point at `principal=anonymous`) shows it.
+      // A link with a filter shows it.
       if (this.principal() || this.repository() || this.project()) this.panelOpen.set(true);
       untracked(() => void this.apply());
     });

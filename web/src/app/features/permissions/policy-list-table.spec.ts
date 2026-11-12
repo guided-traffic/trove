@@ -18,7 +18,7 @@ describe('Policy list table and filter panel (R-UI-027, R-UI-020)', () => {
   });
 
   it('R-UI-027 a link with a principal opens the filter panel with the filter shown and counted', async () => {
-    const { root } = await renderScreen(PolicyList, { inputs: { principal: 'anonymous' } });
+    const { root } = await renderScreen(PolicyList, { inputs: { principal: 'user:alice' } });
     expect(root.querySelector('trove-filter-panel form')).toBeTruthy();
     expect(root.querySelector('button.filter-toggle .filter-count')?.textContent).toBe('1');
   });

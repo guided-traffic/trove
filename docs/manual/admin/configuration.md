@@ -69,11 +69,11 @@ trove reads the configuration file and the environment once, at start. A change 
 
 ## Settings in the UI versus the configuration file
 
-**Admin area › Settings › Authentication** opens **Authentication settings**. It holds the runtime settings, which are stored in PostgreSQL, apply to every replica and survive restarts and upgrades:
+**Admin area › Settings › General** opens **General settings**, whose section **Visibility** holds the default visibility level of new projects and repositories (**Private** after installation; **Public** is available only while `endpoints.default.auth.anonymous` is `true`) and lists what is public now, and **Authentication settings**. **Admin area › Settings › Authentication** holds the runtime settings, which are stored in PostgreSQL, apply to every replica and survive restarts and upgrades:
 
 | Setting in the UI | What it does | Bounded by the file key |
 |---|---|---|
-| **Anonymous access** | Lets requests without a credential read what the anonymous principal may read. Off after installation. | `auth.anonymous.allowed`: when `false`, anonymous access stays off whatever the switch says |
+| **New users are external** | The external flag every user created later starts with; existing users keep theirs. Off after installation. | none |
 | **Token lifetimes** › **Personal tokens**: **Default lifetime (days)**, **Maximum lifetime (days)** | The lifetime a new personal token gets when none is asked for, and the longest one allowed | `auth.tokens.pat.default_ttl`, `auth.tokens.pat.max_ttl` |
 | **Token lifetimes** › **Service account tokens**: the same two values | As above, for service-account tokens | `auth.tokens.sat.default_ttl`, `auth.tokens.sat.max_ttl` |
 | **Expiry notice** | How many days before expiry a token produces its expiry event | `auth.tokens.expiry_notice` |
@@ -170,7 +170,6 @@ The tables below list the keys an installation most often sets. Every key with i
 | `auth.break_glass.enabled` | `true` | The local administrator account; the chart sets `false` without `secrets.breakGlass` |
 | `auth.break_glass.username` | `admin` | Its username |
 | `auth.break_glass.show_on_login_page` | `false` | Show the local form on the sign-in page; it is always reachable with `?auto_sign_in=false` |
-| `auth.anonymous.allowed` | `true` | Ceiling of the **Anonymous access** switch |
 | `auth.revocation_bound` | `2s` | Time within which a revocation or settings change is in force on every replica |
 | `auth.clients.basic.enabled` | `true` | Accept tokens in HTTP Basic authentication, which some package clients need |
 | `auth.rate_limit.failures_per_address` | `300` | Rejected credentials per minute and client address, across all replicas |

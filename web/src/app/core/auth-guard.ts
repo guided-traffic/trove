@@ -13,8 +13,8 @@ export const homeGuard: CanActivateFn = async () => {
   const router = inject(Router);
   const context = inject(ProjectContext);
   await session.load();
-  const projects = session.authenticated() ? await context.ready() : [];
-  const only = projects.length === 1 ? projects[0] : undefined;
+  const projects = await context.ready();
+  const only = session.authenticated() && projects.length === 1 ? projects[0] : undefined;
   return router.createUrlTree(only ? ['/projects', only.key] : ['/projects']);
 };
 
@@ -39,7 +39,7 @@ export const adminHomeGuard: CanActivateFn = async () => {
 
 /**
  * Shapes navigation only; the API decides (R-UI-005). A signed-in session passes. Without a
- * session the guard asks `login-options`: with anonymous access the application runs anonymously
+ * session the guard asks `login-options`: with public content the application runs anonymously
  * (R-UI-004), otherwise it goes to `/login?returnTo=<route>`. If the session could not be
  * determined at all (the server is down) the route is entered and the shell shows the failure.
  */
@@ -55,7 +55,7 @@ export const authGuard: CanActivateFn = async (_route, state: RouterStateSnapsho
       return true;
     default: {
       try {
-        if ((await login.options()).anonymousAccess) return true;
+        if ((await login.options()).publicContent) return true;
       } catch {
         // No login options: send the user to the sign-in screen, which reports the failure.
       }

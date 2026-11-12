@@ -8,6 +8,9 @@
         <span class="material-icons" aria-hidden="true">{{ r.class === 'local' ? 'storage' : r.class === 'remote' ? 'cloud_download' : 'layers' }}</span>
         {{ classText() }}
       </span>
+      @if (r.visibility; as levels) {
+        <span class="badge"><trove-visibility-icon [level]="levels.artifacts" />{{ levelText(levels.artifacts) }}</span>
+      }
       @if (disabled()) {
         <span class="badge warn" i18n="@@repo.badge.disabled">disabled</span>
       }

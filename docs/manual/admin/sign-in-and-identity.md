@@ -12,8 +12,9 @@ trove has no password database. People sign in through an OpenID Connect identit
 | Login page behaviour | Configuration file, `auth.login_page` | When a replica starts |
 | Session lifetimes and the recent sign-in window | Configuration file, `auth.sessions` | When a replica starts |
 | Break-glass account | Configuration file, `auth.break_glass` | When a replica starts; the password file is re-read when it changes |
-| Anonymous access ceiling | Configuration file, `auth.anonymous.allowed` | When a replica starts |
-| Anonymous access switch, token lifetimes | **Admin area › Settings › Authentication** | Within seconds, on every replica |
+| Whether requests without a credential are admitted at all (the ceiling of **Public**) | Configuration file, `endpoints.default.auth.anonymous` | When a replica starts |
+| Default visibility level | **Admin area › Settings › General** | Within seconds, on every replica |
+| New users are external, token lifetimes | **Admin area › Settings › Authentication** | Within seconds, on every replica |
 | Users, groups, memberships, service accounts | **Admin area › Identity** | Within seconds, on every replica |
 
 The **Authentication settings** screen under **Admin area › Settings › Authentication** also shows a read-only **Status (read only)** section: each identity provider with **discovery document loaded** or **not available on this replica**, whether the break-glass account is enabled or locked and, when it is enabled but cannot verify a password, an error that says why (see [The break-glass administrator](#the-break-glass-administrator)), the session timeouts and whether HTTP Basic with a token is allowed. Reading the screen needs the `settings:read` capability, saving needs `settings:write` and a recent sign-in. The token lifetimes on the same screen are described in [Managing tokens](tokens.md).
@@ -165,7 +166,7 @@ config:
 
 - A group that does not exist yet is created as a local group, so the binding holds before anyone has signed in. At sign-in, group synchronization puts the members in; `create_groups` is not needed.
 - A declared user or service account must exist. If it does not, the Job fails and its log names the entry: `kubectl -n trove logs job/trove-migrate`.
-- An unknown role, an entry with two principals or none, and `anonymous` or `authenticated` fail the Job before it touches the database, and the message names the key, for example `authz.role_bindings[0].role "root" is not a system role`.
+- An unknown role, an entry with two principals or none, and `anonymous` or `authenticated` (they are no principals) fail the Job before it touches the database, and the message names the key, for example `authz.role_bindings[0].role "root" is not a system role`.
 - **Admin area › Access › System roles** shows these bindings with the source **Configuration** and without **Unbind**; the API answers `409 role_binding_managed_by_configuration`. Bindings you made on that screen stay as they are. A binding you made there and then add to the list is taken over by the configuration.
 - An entry you remove from the list is unbound at the next upgrade. The Job refuses to remove the last administrator while the break-glass account is disabled (`last_admin`). To hand administration from one group to another, add the new group first and remove the old one in a later upgrade, after a member of the new group has signed in, or keep `secrets.breakGlass` set.
 - A group with auto-join cannot be declared (`auto_join_admin_conflict`).
@@ -224,16 +225,19 @@ auth:
 - **No password file.** An enabled account without `password_file` starts, logs a warning and refuses every local sign-in. The settings screen shows **Enabled.** and, below it, the error **No password is configured: `auth.break_glass.password_file` is empty.** The API field is `status.breakGlass.passwordStatus` of `GET /api/v1/settings/auth`: `ok`, `not_configured`, `unusable` (a rotated file that holds no usable password; the screen says **The password file is not usable on this replica**) or `not_applicable` (the account is disabled). The value describes the replica that answers; a replica that has not yet noticed a rotation can still say `ok`. Test a local sign-in before you rely on the account.
 - **Disable it** once an administrator can sign in through the identity provider: remove `secrets.breakGlass` and roll the release.
 
-## Anonymous access
+## Public content and requests without a credential
 
-Requests without a credential act as the built-in principal `anonymous`. They are admitted only when all of these hold:
+A request without a credential acts as the anonymous subject. It reads exactly what a **Public** level admits: the artifacts of a repository whose artifacts are **Public** and the wiki of one whose wiki is **Public**, in a project that is **Public** ([Visibility levels](permissions.md#visibility-levels)). It is admitted only when the endpoint the request arrives on admits requests without a credential, that is, `auth.anonymous` of the endpoint is `true`; see [Endpoints and exposure rules](endpoints.md). The `auth.anonymous` of the default endpoint is also the ceiling of **Public**: while it is `false`, no level can be set to **Public** and the option is disabled with the reason.
 
-1. `auth.anonymous.allowed` is true (the default) in the configuration.
-2. **Allow requests without a credential to read what the anonymous principal may read** is switched on under **Admin area › Settings › Authentication**. It is off on a fresh installation.
-3. The endpoint the request arrives on admits anonymous requests; see [Endpoints and exposure rules](endpoints.md).
-4. A permission policy grants `read` to `anonymous` on the repository, which must not have **Require authentication** set; see [Permissions](permissions.md#anonymous-and-all-signed-in-users).
+Anonymous callers only read: on the management API they get safe methods only, and a refused request answers `401` so that a client retries with its credentials. There is no switch and no policy entry for `anonymous`: an entry that names it answers `principal_not_allowed`. While some repository is **Public**, `GET /api/v1/auth/login-options` reports `publicContent: true`: the application opens without asking for a sign-in, shows the public projects and offers **Sign in**, and the sign-in screen shows **Continue without signing in**. With no public content a visitor is sent to the sign-in screen.
 
-Anonymous callers only read: on the management API they get safe methods only. With the switch on, the sign-in screen shows **Continue without signing in**.
+## Internal and external users
+
+The level **Internal** admits every internal user. A user is internal when it acts through a browser session or a personal access token and is not flagged external; a request that reached trove through a Bastion is never internal. A service account, a CI token and a Bastion registration are never internal.
+
+- **Flag a user as external** with **External user** on the user's page (**Admin area › Identity › Users**), then **Save changes**; it needs `identities:write` and a recent sign-in. The break-glass account is never external. The users list shows the badge **External** and has the filter **External**; the API filter is `external=true`.
+- **What an external user reads.** The projects it is a member of, what a policy grants it, and what is **Public**. Internal projects and repositories stay hidden: they are not listed and answer `404`. The change reaches every replica within `auth.revocation_bound`.
+- **Users created later.** **New users are external** in **Authentication settings** sets the flag for every user created from then on, whatever created it (first sign-in, SCIM or **Add user**); existing users keep theirs, and **Add user** has the same checkbox, preset to it. No claim of the identity provider, no group and no SCIM attribute sets the flag. It is off on a fresh installation, so a person who signs in for the first time reads every **Internal** repository until an administrator flags them; switch it on if your identity provider also signs in people from outside the organization, and flag the employees by hand.
 
 ## Brute-force protection
 
@@ -287,7 +291,7 @@ A group's page lets you rename it and change the description and auto-join flag 
 
 ## The Service accounts screen
 
-A service account is a non-human principal for CI systems and automation. Its tokens act as the account, not as a person, and it is never part of `authenticated` and never a member of a project. A service account belongs to no project, `sa:<name>`, or to one project for good, `sa:<projectKey>/<name>`; the name is unique among the accounts of its project, and among those of no project, so `sa:partner` and `sa:web/partner` are two accounts.
+A service account is a non-human principal for CI systems and automation. Its tokens act as the account, not as a person, and it is never internal and never a member of a project. A service account belongs to no project, `sa:<name>`, or to one project for good, `sa:<projectKey>/<name>`; the name is unique among the accounts of its project, and among those of no project, so `sa:partner` and `sa:web/partner` are two accounts.
 
 **Admin area › Identity › Service accounts** lists **Name**, **Description** and **Status**. Select **New service account** and enter a **Name** (lower-case letters, digits and `-`, two to 63 characters) and a **Description**. On the account's page you can change the **Description** in place (**Save changes**), see the account's status, whether it holds the administrator role, and when it was created under **Details**, see its system roles, manage its **Tokens**, and under **Advanced** **Disable** (with **Also revoke all tokens of this account**, unchecked by default), **Enable** or **Delete** the account with its tokens; see [Managing tokens](tokens.md). Grant it rights with a permission policy entry `sa:<name>`, or add it to a group.
 

@@ -71,7 +71,7 @@ A scope without `inherit` names no right over the owner's own account. Such a to
 
 ## Lifetime limits and defaults
 
-**Admin area › Settings › Authentication** opens **Authentication settings**: the switch for anonymous access is open at the top, and **Token lifetimes** and **Status** are sections you open. Each of the first two has its own **Save changes** button, which sends only the values of its own group. **Token lifetimes** holds, for **Personal tokens** and **Service account tokens**, the **Default lifetime (days)** and the **Maximum lifetime (days)**, and under **Expiry notice** the period **Notify this many days before a token expires**. Values are in days, fractions allowed, at least 60 seconds. Each field shows its ceiling from the configuration, which it cannot exceed (`exceeds_ceiling`), and a default cannot exceed its maximum (`default_above_maximum`). **Save changes** needs the permission to change settings and a recent sign-in; the change applies on every replica and is recorded as `settings.auth.changed`. A **Maximum lifetime** you lower stays lowered after a restore to an earlier point: the restore applies the shorter of the restored and the recorded maximum, and lowers a default that would then exceed it. The defaults and the expiry notice are not recorded, and a maximum you raised is not restored.
+**Admin area › Settings › Authentication** opens **Authentication settings**: the checkbox **New users are external** is open at the top, and **Token lifetimes** and **Status** are sections you open. Each of the first two has its own **Save changes** button, which sends only the values of its own group. **Token lifetimes** holds, for **Personal tokens** and **Service account tokens**, the **Default lifetime (days)** and the **Maximum lifetime (days)**, and under **Expiry notice** the period **Notify this many days before a token expires**. Values are in days, fractions allowed, at least 60 seconds. Each field shows its ceiling from the configuration, which it cannot exceed (`exceeds_ceiling`), and a default cannot exceed its maximum (`default_above_maximum`). **Save changes** needs the permission to change settings and a recent sign-in; the change applies on every replica and is recorded as `settings.auth.changed`. A **Maximum lifetime** you lower stays lowered after a restore to an earlier point: the restore applies the shorter of the restored and the recorded maximum, and lowers a default that would then exceed it. The defaults and the expiry notice are not recorded, and a maximum you raised is not restored.
 
 The ceilings and the other token limits are configuration keys:
 
@@ -116,7 +116,7 @@ Each endpoint decides which credentials it accepts, under `server.endpoints.<nam
 |---|---|---|
 | `token_types` | `[pat, sat, cit]` | `[sat]` |
 | `bound_tokens_only` | `false` | `true`: only tokens bound to this endpoint |
-| `anonymous` | `true` (subject to the anonymous access switch) | `false` |
+| `anonymous` | `true` (the ceiling of **Public** content) | `false` |
 
 A token whose `endpoints` list is not empty works only on the endpoints it names; list `default` too if it should also work on the main address. The names are checked against the configuration when the token is created and kept on rotation. If an endpoint is later removed from the configuration, the token lists show **Bound to an endpoint that is not configured:** with the name; the token is valid on none of them.
 

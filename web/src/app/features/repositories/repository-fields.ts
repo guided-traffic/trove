@@ -5,7 +5,8 @@ import { RepositoryForm } from './repository-model';
 
 /**
  * The settings of the repository document that apply to the generic format (R-REPO-004,
- * R-GENERIC-008): description, notes, include and exclude patterns and the three access switches.
+ * R-GENERIC-008): description, notes, include and exclude patterns, the disabled switch and the hiding of existence. The visibility levels are
+ * their own block (`trove-repository-visibility`, R-UI-055).
  * Used by the wizard and the edit form. Server field errors appear next to their control.
  */
 @Component({
@@ -131,17 +132,6 @@ import { RepositoryForm } from './repository-model';
           />
           <span i18n="@@repo.field.disabled">
             Disabled: takes no part in resolution, download or deploy
-          </span>
-        </label>
-        <label class="check-row" for="f-requireAuthentication">
-          <input
-            id="f-requireAuthentication"
-            type="checkbox"
-            [checked]="form().requireAuthentication"
-            (change)="set({ requireAuthentication: $any($event.target).checked })"
-          />
-          <span i18n="@@repo.field.require-auth">
-            Require authentication, even where anonymous read is granted
           </span>
         </label>
         <div class="field">

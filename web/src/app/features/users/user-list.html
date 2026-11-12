@@ -30,6 +30,9 @@
     <trove-filter-category i18n-label="@@users.admin" label="Administrator" [active]="!!admin()" [expanded]="!!admin()">
       <trove-select-field i18n-label="@@users.admin" label="Administrator" name="admin" [options]="adminOptions" [(value)]="admin" />
     </trove-filter-category>
+    <trove-filter-category i18n-label="@@users.external" label="External" [active]="!!external()" [expanded]="!!external()">
+      <trove-select-field i18n-label="@@users.external" label="External" name="external" [options]="externalOptions" [(value)]="external" />
+    </trove-filter-category>
   </trove-filter-panel>
 
   <div class="list-main">
@@ -56,6 +59,9 @@
               <a [routerLink]="['/admin/users', u.username]" translate="no">{{ u.displayName || u.username }}</a>
               <span class="secondary" translate="no">&#64;{{ u.username }}</span>
             </span>
+            @if (u.external) {
+              <span class="badge" i18n="@@users.external-badge">External</span>
+            }
           </th>
           <td>{{ u.email ?? '' }}</td>
           <td>{{ originLabel(u.origin) }}</td>

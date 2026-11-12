@@ -26,13 +26,15 @@ export interface RepoSeed {
   readonly url?: string;
   /** The member `vulnerabilities` of the repository document (R-VULN-002). */
   readonly vulnerabilities?: { readonly matchPublicAdvisories: 'auto' | 'always' | 'never' };
+  /** The levels of the artifacts and of the wiki (R-AUTHZ-033); absent takes the lower of the installation's default and the project's level. */
+  readonly visibility?: { readonly artifacts: 'private' | 'internal' | 'public'; readonly wiki: 'private' | 'internal' | 'public' };
 }
 
 export const projects = [
-  { key: 'web-frontend', displayName: 'Web frontend', description: "The customer portal's packages, container images and static assets." },
-  { key: 'platform', displayName: 'Platform engineering', description: 'Base images, Debian packages, NuGet libraries and automation for every team.' },
+  { key: 'web-frontend', visibility: 'internal', displayName: 'Web frontend', description: "The customer portal's packages, container images and static assets." },
+  { key: 'platform', visibility: 'public', displayName: 'Platform engineering', description: 'Base images, Debian packages, NuGet libraries and automation for every team.' },
   // Empty: the empty states of a project.
-  { key: 'sandbox', displayName: 'Sandbox', description: '' },
+  { key: 'sandbox', visibility: 'private', displayName: 'Sandbox', description: '' },
 ] as const;
 
 /** The project the power user owns, and in which the screens of a project are rendered. */
@@ -44,7 +46,7 @@ export const longNpmKey = 'release-candidates-for-the-customer-portal-frontend';
 export const longDebKey = 'debian-internal-packages-for-bookworm-and-trixie';
 
 export const repositories: readonly RepoSeed[] = [
-  { project: mainProject, key: 'npm-internal', format: 'npm', class: 'local', description: 'Packages built by the web team.' },
+  { project: mainProject, key: 'npm-internal', format: 'npm', class: 'local', description: 'Packages built by the web team.', visibility: { artifacts: 'internal', wiki: 'internal' } },
   { project: mainProject, key: 'npmjs', format: 'npm', class: 'remote', description: 'The public npm registry, cached.' },
   { project: mainProject, key: 'npm', format: 'npm', class: 'virtual', members: ['npm-internal', 'npmjs'] },
   {
@@ -55,7 +57,7 @@ export const repositories: readonly RepoSeed[] = [
     description:
       'Release candidates of the customer portal before they are promoted; the release pipeline removes candidates older than four weeks every Monday.',
   },
-  { project: mainProject, key: 'assets', format: 'generic', class: 'local', description: "Static files: fonts, icons and the design system's release archives." },
+  { project: mainProject, key: 'assets', format: 'generic', class: 'local', description: "Static files: fonts, icons and the design system's release archives.", visibility: { artifacts: 'internal', wiki: 'internal' } },
   { project: mainProject, key: 'images', format: 'oci', class: 'local' },
   // Vendored public packages, matched against the seed's advisories so that every grade occurs (advisories.ts, R-VULN-038).
   {
@@ -79,7 +81,7 @@ export const repositories: readonly RepoSeed[] = [
   { project: advisoryMirror.project, key: advisoryMirror.key, format: 'generic', class: 'local', description: 'Advisory data for the offline sync.' },
   { project: otherProject, key: 'nuget-org', format: 'nuget', class: 'remote' },
   { project: otherProject, key: 'nuget', format: 'nuget', class: 'virtual', members: ['nuget-internal', 'nuget-org'] },
-  { project: otherProject, key: 'collections', format: 'ansible', class: 'local', description: 'Ansible collections of the platform team.' },
+  { project: otherProject, key: 'collections', format: 'ansible', class: 'local', description: 'Ansible collections of the platform team.', visibility: { artifacts: 'public', wiki: 'internal' } },
   { project: otherProject, key: 'galaxy', format: 'ansible', class: 'remote' },
   { project: otherProject, key: 'ansible', format: 'ansible', class: 'virtual', members: ['collections', 'galaxy'] },
 ];
@@ -183,7 +185,7 @@ export async function expectStatus(res: APIResponse, ok: readonly number[], what
 /** The projects and their repositories, created by the break-glass account; an existing one is left as it is. */
 export async function seedProjectsAndRepositories(admin: Api): Promise<void> {
   for (const p of projects) {
-    const res = await admin.post('/api/v1/projects', { key: p.key, displayName: p.displayName, ...(p.description ? { description: p.description } : {}) });
+    const res = await admin.post('/api/v1/projects', { key: p.key, displayName: p.displayName, visibility: p.visibility, ...(p.description ? { description: p.description } : {}) });
     await expectStatus(res, [201, 409], `create project ${p.key}`);
   }
   // Locals first: a virtual repository names its members.
@@ -191,6 +193,7 @@ export async function seedProjectsAndRepositories(admin: Api): Promise<void> {
   for (const r of order) {
     const body: Record<string, unknown> = { key: r.key, class: r.class, format: r.format };
     if (r.description) body['description'] = r.description;
+    if (r.visibility) body['visibility'] = r.visibility;
     if (r.class === 'remote' && r.url) body['remote'] = { url: r.url };
     if (r.vulnerabilities) body['vulnerabilities'] = r.vulnerabilities;
     if (r.class === 'virtual') {

@@ -4,8 +4,9 @@ This page explains who may do what in trove. Repository content is governed by t
 
 ## The model in brief
 
-- **Deny by default.** A fresh installation has no project, no member and no policy, so nobody but an administrator can read or write content.
-- **Allow only.** A role and a policy only add rights. Nothing in another policy can take them away; only an exclude pattern of the same policy, a token's scope and an endpoint's exposure rules narrow them.
+- **Deny by default.** A fresh installation has no project, no member and no policy, and every project and repository is **Private**, so nobody but an administrator can read or write content.
+- **Allow only.** A role, a policy and a visibility level only add rights. Nothing in another policy can take them away; only an exclude pattern of the same policy, a token's scope and an endpoint's exposure rules narrow them.
+- **Visibility opens reading, nothing else.** A project, and a repository's artifacts and wiki, are **Private**, **Internal** or **Public**; the level admits more readers, never a write ([Visibility levels](#visibility-levels)).
 - **No action implies another.** `deploy` does not include `read`, `manage` does not include `deploy`.
 - **Every repository belongs to one project.** Its address names the project and the repository, `web/npm-internal`, and the key is unique within the project only. The members of a project hold a role there, which gives actions on every repository of the project ([Members and roles](projects.md#members-and-roles)).
 - **Content and administration are separate.** Roles and policies decide repository actions. System roles decide the administration of the installation, such as creating projects or editing users; the Owner role of a project decides the administration of that project. The one bridge is the `admin` role, which may do every repository action as well.
@@ -18,10 +19,8 @@ This page explains who may do what in trove. Repository content is governed by t
 | Group | `group:<name>` | Every member of the group, at the moment of the request |
 | Service account | `sa:<name>`; `sa:<projectKey>/<name>` for a service account of a project | The account and every token it owns |
 | CI mapping | `ci:<issuer>/<mapping>`; `ci:<issuer>/<projectKey>/<mapping>` for a mapping of a project | Every CI token the mapping contributed to ([GitLab CI federation](gitlab-ci.md)) |
-| All signed-in users | `authenticated` | Every user; never a service account |
-| Anonymous | `anonymous` | Requests without a credential |
 
-A request acts as its principal, its groups and, for a user, `authenticated`, with the roles the user and its groups hold in the repository's project. Groups and project memberships are looked up for every request, so a change applies without a new token. A service account, a CI token and `anonymous` hold no role in any project; they reach a project's repositories through policies. Policies store the principal's internal ID: a renamed user keeps its rights, and a user deleted and created again under the same name has none. Users, groups and service accounts are described in [Sign-in and identities](sign-in-and-identity.md).
+A request acts as its principal and its groups, with the roles the user and its groups hold in the repository's project. Groups and project memberships are looked up for every request, so a change applies without a new token. A service account and a CI token hold no role in any project; they reach a project's repositories through policies. A request without a credential is the anonymous subject: it is no principal that a policy, a role or a membership can name, and it reads only what a **Public** level admits. Policies store the principal's internal ID: a renamed user keeps its rights, and a user deleted and created again under the same name has none. Users, groups and service accounts are described in [Sign-in and identities](sign-in-and-identity.md).
 
 ## Resources
 
@@ -61,20 +60,19 @@ For Debian repositories the package name is the binary package name (`acme-*` co
 
 For every request trove checks, in this order:
 
-1. **Anonymous access.** A request without a credential needs anonymous access switched on.
-2. **Endpoint ceiling.** The exposure rules of the endpoint the request arrived on admit the repository, package or path, for every caller including administrators. See [Endpoints and exposure rules](endpoints.md).
-3. **Require authentication.** A repository with **Require authentication** set refuses requests without a credential.
-4. **Virtual gate.** For a virtual repository, the caller needs `read` on the virtual repository itself. Content is then decided on the member that serves it, and a write on the deployment target.
-5. **Grants.** The union of the caller's role in the repository's project and of all policy entries, global and of the project, for the caller's principals that cover the repository, package or path and hold the action. The `admin` role passes this step for every action.
-6. **Token scope.** A token's scope is intersected with the result; it never grants anything. See [Managing tokens](tokens.md).
-7. **Checks that never grant.** Filling a remote cache needs `read` plus the repository's cache-fill action and is never done through a browser session. On a local npm repository with package ownership, a name is changed only by its owners, `manage` holders and administrators; an owner changes the owners through a token with a restricted scope only where that scope lists `manage` on the repository and the name. A first version that a remote member of a virtual repository already serves needs `manage`. See [Managing repositories](repositories.md).
+1. **Endpoint ceiling.** The endpoint the request arrived on admits it: a request without a credential needs an endpoint whose `auth.anonymous` is `true`, and the exposure rules admit the repository, package or path, for every caller including administrators. See [Endpoints and exposure rules](endpoints.md).
+2. **Visibility level.** A read is allowed when the level of the repository's artifacts, or of its wiki for the README and the documentation, admits the caller: **Public** admits every request, **Internal** every internal user ([Visibility levels](#visibility-levels)). A level never grants a write.
+3. **Virtual gate.** For a virtual repository, the caller needs `read` on the virtual repository itself. Content is then decided on the member that serves it, and a write on the deployment target.
+4. **Grants.** The union of the caller's role in the repository's project and of all policy entries, global and of the project, for the caller's principals that cover the repository, package or path and hold the action. The `admin` role passes this step for every action.
+5. **Token scope.** A token's scope is intersected with the result of a grant and of an **Internal** level; it never grants anything, and a **Public** level needs no credential at all. See [Managing tokens](tokens.md).
+6. **Checks that never grant.** Filling a remote cache needs `read` plus the repository's cache-fill action and is never done through a browser session. On a local npm repository with package ownership, a name is changed only by its owners, `manage` holders and administrators; an owner changes the owners through a token with a restricted scope only where that scope lists `manage` on the repository and the name. A first version that a remote member of a virtual repository already serves needs `manage`. See [Managing repositories](repositories.md).
 
 The answer depends on what was refused:
 
 | Situation | Answer |
 |---|---|
 | The endpoint's exposure rules refused | 404, for every caller |
-| No credential, and anything else was refused | 401 |
+| No credential, and anything else was refused | 401, the same for a read and a write |
 | A read was refused | 404, the same as for a repository that does not exist |
 | A write or a management operation was refused | 403, naming the action |
 
@@ -88,7 +86,7 @@ Deleting or renaming a principal or deleting a repository updates the affected p
 
 ## System roles
 
-Roles are fixed; there are no custom roles. A role is bound to a user, a group or a service account, never to `anonymous` or `authenticated`. A browser session exercises every role of its user; a token exercises roles only as its scope allows.
+Roles are fixed; there are no custom roles. A role is bound to a user, a group or a service account. A browser session exercises every role of its user; a token exercises roles only as its scope allows.
 
 | Role | Capabilities |
 |---|---|
@@ -137,36 +135,43 @@ To create a policy, select **New policy**. **New policy** in a project's **Permi
 
 A policy that belongs to a project shows **Project policy of** and the project's key. Its name is unique within the project, so the same name can exist in another project and once as a global policy, and it is addressed as `/api/v1/projects/<projectKey>/policies/<name>`. The Owners of the project create and change it, within the limits of [Permission policies of a project](projects.md#permission-policies-of-a-project), as does a holder of `policies:write`. The list in the admin area names the project of each policy in a **Project** column and can be limited to one project in its filter panel. Editing an existing policy ends with **Review and save**, which shows the differences in **Save these changes?** before **Save policy**. If someone changed the policy meanwhile, a conflict dialog lets you compare and decide. **Delete policy** removes it; it is in the section **Advanced** at the end of the editor. Saving and deleting need `policies:write` and a recent sign-in.
 
-The editor refuses an entry for `anonymous` or `authenticated` with any action other than `read`, a policy with an `anonymous` entry that selects repositories by anything but key, and actions other than `read` and `manage` on a virtual repository named by key. It warns, without refusing, when a selector matches no repository yet, when path patterns are used on a package format, and when `anonymous` may read a remote repository, because anyone could then fill its cache from the upstream.
+The editor refuses an entry for `anonymous` or `authenticated` (`principal_not_allowed`: a visibility level opens content to everyone, a policy does not) and actions other than `read` and `manage` on a virtual repository named by key. It warns, without refusing, when a selector matches no repository yet and when path patterns are used on a package format.
 
 ### Why can X do Y
 
-The **Try it** section of the preview answers whether a principal may do an action on a repository under the draft. Enter a **Principal** such as `user:alice`, a **Repository** and an **Action**, and select **Explain** (without a principal and a repository it says so). The preview's list of problems names each field by its label and shows a problem of a field once you have filled the field or tried to save. The answer lists the steps: whether the selectors cover the repository, which entry applies (directly, through a group of the user, or through `authenticated`), and whether it holds the action. `authenticated` applies to users only, as when a request is decided, so an entry for `authenticated` never allows a service account such as `sa:ci-web`. It ends with **Allowed by this draft** or **Not granted by this draft**, and tells you whether you yourself may do this under the stored policies.
+The **Try it** section of the preview answers whether a principal may do an action on a repository under the draft. Enter a **Principal** such as `user:alice`, a **Repository** and an **Action**, and select **Explain** (without a principal and a repository it says so). The preview's list of problems names each field by its label and shows a problem of a field once you have filled the field or tried to save. The answer lists the steps: whether the selectors cover the repository, which entry applies (directly, or through a group of the user), and whether it holds the action. It ends with **Allowed by this draft** or **Not granted by this draft**, and tells you whether you yourself may do this under the stored policies.
 
-The answer evaluates only the draft. Other policies, token scopes, exposure rules and package ownership are not part of it. To answer the question for all stored policies, filter the policy list by the principal and by the repository.
+The answer evaluates only the draft. Other policies, visibility levels, token scopes, exposure rules and package ownership are not part of it. To answer the question for all stored policies, filter the policy list by the principal and by the repository.
 
 ## The System roles screen
 
 **Admin area › Access › System roles** shows every role with its **Capabilities** and the principals that hold it, with **Granted**, **Granted by** and **Source**. To bind a role, enter `user:<name>`, `group:<name>` or `sa:<name>` in **Bind to** and select **Bind**; a service account of a project holds no system role (`role_not_allowed`); **Unbind** removes a holder. Both need `roles:write` and a recent sign-in. The last administrator cannot be removed (`last_admin`) while the break-glass account is disabled, and a group with auto-join cannot hold a role. A binding with the source **Configuration** is declared in `authz.role_bindings` and shows **Managed in the configuration** instead of **Unbind**; change it in your Helm values ([Administrators from the Helm values](sign-in-and-identity.md#administrators-from-the-helm-values)).
 
-## Anonymous and all signed-in users
+## Visibility levels
 
-- `authenticated` holds `read` only. Use it for "every employee may read". Service accounts are not included.
-- `anonymous` holds `read` only, on repositories named by key. It takes effect only while anonymous access is switched on and the endpoint admits anonymous requests; see [Sign-in and identities](sign-in-and-identity.md#anonymous-access). The link **Policies that name the anonymous principal** on the settings screen opens the filtered list.
-- A repository with **Require authentication, even where anonymous read is granted** refuses anonymous callers whatever the policies say.
-- Both appear in global policies only. A project policy refuses them, and an auto-join group, which every user is a member of (`principal_outside_project`); within a project, give users a role instead.
+A project has one level; a repository has one for its **artifacts**, what package clients install, download and list, and one for its **wiki**, the README and the documentation of its packages that trove serves apart from the files. A level adds readers to the members of the project and the principals a policy names:
+
+| Level | Who reads besides them |
+|---|---|
+| **Private** | Nobody |
+| **Internal** | Every internal user: a person who signs in or uses a personal token and is not flagged external, and is not behind a Bastion |
+| **Public** | Every request, also one without a credential, where the endpoint admits requests without a credential |
+
+- **Never more open than the container.** The artifacts of a repository are at most as open as its project, and its wiki at most as open as its artifacts. The screens disable the options above the limit and say why; the API answers 422 `visibility_above_project` or `visibility_wiki_above_artifacts`. Lowering a project lowers the repositories above the new level with it, and lowering never withdraws what a client already downloaded.
+- **Who sets it.** An administrator sets a project's level (**Settings › Visibility** of the project, `projects:write`); the Owner of the project or a holder of `repositories:write-config` sets the levels of a repository (**Access › Visibility** of the repository). The default for projects and repositories created later is the **Visibility** section of **Admin area › Settings › General** (`security-settings:write`). A new repository starts at the lower of that default and its project's level.
+- **Public needs an endpoint that admits it.** While the default endpoint has `auth.anonymous: false`, no level can be **Public**: the option is disabled with the reason and the API answers 409 `public_not_allowed`. See [Endpoints and exposure rules](endpoints.md).
+- **Internal and external users.** An administrator flags a user **External user** on the user's page; an external user reads what it is a member of, what a policy grants it and what is **Public**. A service account, a CI token and a Bastion registration are never internal: they read what their grants give and what is **Public**. See [Sign-in and identities](sign-in-and-identity.md#internal-and-external-users).
+- **A remote repository that is public** lets anyone fill its cache from the upstream; saving it answers with a warning, and `cacheFillAction: deploy` closes it ([Managing repositories](repositories.md)).
+- **A token's scope narrows an Internal read** like a grant; it narrows nothing that is Public.
+- **A virtual repository is readable without a credential** only when it and every member are **Public**.
+
+The projects start page lists the projects the caller is a member of first, with the role, then the others its level admits, and a visitor without an account sees the **Public** ones.
 
 ## Typical setups
 
-### Everyone signed in reads everything
+### Everyone signed in reads, and some content is public
 
-| Field | Value |
-|---|---|
-| **Name** | `everyone-reads` |
-| **Repository selectors** | `@any` |
-| Entry | `authenticated` with `read` |
-
-This global policy covers the repositories of every project. Add a second one for public content: selector `web/npm-public`, entry `anonymous` with `read`, and switch anonymous access on.
+Set the project `web` to **Internal** and the artifacts and the wiki of `web/npm-internal` to **Internal**: every internal user reads them and nobody needs a policy. For content that anyone may install, set `web` to **Public**, then the artifacts of `web/npm-public` to **Public** and its wiki to **Internal** if the README should stay inside the organization: an anonymous `npm install` works, `npm view` prints no README, and an internal user's token prints it.
 
 ### A team works in its project
 
@@ -196,7 +201,7 @@ For GitLab CI, prefer the [GitLab CI federation](gitlab-ci.md), which needs no s
 
 1. An Owner of `web` creates the service account `ci` in the project (`sa:web/ci`) on the project's page and creates a token for it.
 2. A project policy `ci-publish` of `web`: selector `npm-internal`, package include `@web/*`, entry `sa:web/ci` with `read` and `deploy`.
-3. A project policy `ci-install` of `web`: selector `@any:npm`, entry `sa:web/ci` with `read`. Service accounts are no members of a project and not part of `authenticated`, so they need their own read grant, also on the members of a virtual repository and on remote repositories they fill.
+3. A project policy `ci-install` of `web`: selector `@any:npm`, entry `sa:web/ci` with `read`. Service accounts are no members of a project and never internal, so they need their own read grant unless the repository is **Public**, also on the members of a virtual repository and on remote repositories they fill.
 4. Give the token a scope that names only these repositories and actions, with their project (`web/npm-internal`), so a leaked token can do no more.
 
 A publish through a virtual repository is decided on its deployment target, so `deploy` on `npm-internal` is what the pipeline needs, not `deploy` on the virtual repository. A service account of a project is granted only by its project's policies: a global policy or another project's policy cannot name it (`principal_outside_project`), and it cannot join a group (`project_account_not_groupable`).

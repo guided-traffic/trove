@@ -1,6 +1,6 @@
 import { e2eProject, expect, expectAccessible, repositories, signInLocal, test, unique } from '../support';
 
-// R-UI-047 journey "general settings" (R-UI-033, R-OPS-024, R-OPS-025): an administrator saves a banner and it shows on the
+// R-UI-047 journey "general settings" (R-UI-033, R-UI-053, R-OPS-024, R-OPS-025): an administrator saves a banner and it shows on the
 // sign-in page of an anonymous browser and, after a reload, on every screen; a javascript link in its message is shown as text.
 // Switching the read-only maintenance mode on asks first, then every write answers 503 with the message, reads still work, and
 // switching it off lifts the refusal. Whatever the journey sets is put back through the API at the end, so the installation the
@@ -11,6 +11,25 @@ const bannerText = 'Planned work on Saturday, see [status](https://status.exampl
 test.afterEach(async ({ admin }) => {
   await admin.put('/api/v1/system/maintenance', { data: { mode: 'normal' } });
   await admin.put('/api/v1/system/banner', { data: { enabled: false } });
+  await admin.patch('/api/v1/settings/visibility', {
+    data: { defaultLevel: 'private' },
+    headers: { 'Content-Type': 'application/merge-patch+json', 'If-Match': '*' },
+  });
+});
+
+test('R-UI-053 the default visibility level is saved in its own section and read back from the API', async ({ page, admin }) => {
+  await signInLocal(page);
+  await page.goto('/ui/en/admin/settings/general');
+  const section = page.getByRole('button', { name: 'Visibility', exact: true });
+  await expect(section).toHaveAttribute('aria-expanded', 'false');
+  await section.click();
+  await expect(page.getByRole('radio', { name: /^Private/ })).toBeChecked();
+  await page.getByRole('radio', { name: /^Internal/ }).check();
+  await page.getByRole('button', { name: 'Save changes (visibility)' }).click();
+  await expect(page.getByText('Default visibility saved.')).toBeVisible();
+  const stored = await admin.get('/api/v1/settings/visibility');
+  expect((await stored.json()).defaultLevel).toBe('internal');
+  await expectAccessible(page, 'general settings, visibility');
 });
 
 test('R-UI-033 R-OPS-025 a saved banner shows on the sign-in page and on every screen, and its javascript link is plain text', async ({

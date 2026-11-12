@@ -14,7 +14,7 @@ import { PermissionPolicyInput } from './authz-api';
 
 /** The question: may `principal` do `action` on `repository`, optionally on one package or path. */
 export interface ExplainQuestion {
-  /** A principal reference: `user:alice`, `group:team-web`, `sa:ci-bot`, `anonymous`, `authenticated`. */
+  /** A principal reference: `user:alice`, `group:team-web`, `sa:ci-bot`. */
   readonly principal: string;
   readonly repository: string;
   readonly action: string;
@@ -106,8 +106,8 @@ export class DraftPolicyExplainer extends PolicyExplainer {
   }
 
   /**
-   * The references an entry can name to apply to `principal`: itself, `authenticated` for a
-   * user, and for a user the groups of its record (needs `identities:read`).
+   * The references an entry can name to apply to `principal`: itself and, for a user, the groups of its record (needs
+   * `identities:read`). No entry can name `anonymous` or `authenticated`: a visibility level opens content to those (R-AUTHZ-033).
    */
   private async references(
     principal: string,
@@ -115,9 +115,6 @@ export class DraftPolicyExplainer extends PolicyExplainer {
   ): Promise<{ ref: string }[]> {
     const refs: { ref: string }[] = [{ ref: principal }];
     if (principal.startsWith('user:')) {
-      // `authenticated` covers users only, not service accounts, CI identities or anonymous
-      // (Q-AUTHZ-3, R-AUTHZ-030); the server's `authz/me` adds it the same way.
-      refs.push({ ref: 'authenticated' });
       try {
         const user = await this.identity.user(principal.slice('user:'.length));
         for (const g of user.value.groups) refs.push({ ref: `group:${g.name}` });

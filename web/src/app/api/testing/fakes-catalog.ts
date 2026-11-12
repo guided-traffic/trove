@@ -81,6 +81,7 @@ export const GENERIC_FORMAT: FormatDescriptor = {
   vulnerabilityScanning: false,
   mirror: false,
   settingsSchema: null,
+  wiki: false,
 };
 
 /** The settings schema npm registers (internal/formats/npm/settings.schema.json), as the catalog serves it. */
@@ -169,6 +170,7 @@ export const PACKAGE_FORMAT: FormatDescriptor = {
   vulnerabilityScanning: true,
   mirror: true,
   settingsSchema: NPM_SETTINGS_SCHEMA,
+  wiki: true,
 };
 
 /** The settings schema NuGet registers (internal/formats/nuget/settings.schema.json), as the catalog serves it. */
@@ -206,6 +208,7 @@ export const NUGET_FORMAT: FormatDescriptor = {
   ],
   protocolBasePath: '/api/nuget/{project}/{key}/v3/',
   settingsSchema: NUGET_SETTINGS_SCHEMA,
+  wiki: true,
 };
 
 /** OCI as the catalog lists it (internal/formats/oci/format.go): the class local only, the Docker CLI and Podman, the registry root as base path. Its settings schema is not copied. */
@@ -286,6 +289,7 @@ export const DEB_FORMAT: FormatDescriptor = {
   clients: [{ id: 'apt', displayName: 'APT (apt, apt-get)' }],
   protocolBasePath: '/api/deb/{project}/{key}/',
   settingsSchema: DEB_SETTINGS_SCHEMA,
+  wiki: false,
 };
 
 /** The settings of the Ansible Galaxy format (internal/formats/ansible/settings.schema.json): two members, both for remote repositories. */
@@ -319,6 +323,7 @@ export const ANSIBLE_FORMAT: FormatDescriptor = {
   clients: [{ id: 'ansible-galaxy', displayName: 'Ansible Galaxy (ansible-galaxy)' }],
   protocolBasePath: '/api/ansible/{project}/{key}/',
   settingsSchema: ANSIBLE_SETTINGS_SCHEMA,
+  wiki: true,
 };
 
 /** A repository of the fake: the project is writable so that a test can move one. */
@@ -340,7 +345,7 @@ export class FakeRepositoriesApi extends RepositoriesApi {
       includePatterns: [],
       excludePatterns: [],
       disabled: false,
-      requireAuthentication: true,
+      visibility: { artifacts: 'private', wiki: 'private' },
       hideExistence: 'inherit',
       createdAt: '2026-10-01T10:00:00Z',
       updatedAt: '2026-10-01T10:00:00Z',
@@ -402,6 +407,7 @@ export class FakeRepositoriesApi extends RepositoriesApi {
         class: r.class,
         format: r.format,
         description: r.description ?? '',
+        visibility: r.visibility ?? { artifacts: 'private', wiki: 'private' },
         addresses: [`https://trove.example.net/files/${refOf(r)}/`],
         disabled: r.disabled ?? false,
         lifecycle: (r.lifecycle ?? 'active') as 'active' | 'deleting',
@@ -431,6 +437,7 @@ export class FakeRepositoriesApi extends RepositoriesApi {
           format: repo.format,
           description: repo.description ?? '',
           layout: 'generic',
+          visibility: repo.visibility ?? { artifacts: 'private', wiki: 'private' },
           addresses: [`https://trove.example.net/files/${ref}/`],
         },
         etag: `"${this.version(key)}-consumer"`,
@@ -484,7 +491,16 @@ export class FakeRepositoriesApi extends RepositoriesApi {
     ) as unknown as Repository;
     this.repositories[index] = next;
     this.versions.set(key, this.version(key) + 1);
-    return { value: structuredClone(next), etag: `"${this.version(key)}"` };
+    const warned =
+      next.class === 'remote' && next.visibility?.artifacts === 'public'
+        ? [
+            {
+              code: 'public_populates_remote',
+              detail: 'Anyone can fill the cache of this remote repository from its upstream.',
+            },
+          ]
+        : [];
+    return { value: { ...structuredClone(next), warnings: warned }, etag: `"${this.version(key)}"` };
   }
 
   deleteCalls: { key: string; idempotencyKey: string; detach: boolean }[] = [];

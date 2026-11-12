@@ -13,7 +13,7 @@ The browser signs you in through your organization's identity provider. Tools ne
 
 ## Sign in
 
-Open the address of your installation, for example `https://trove.example.com/`. trove sends you to the sign-in screen when you are not signed in and the installation does not allow anonymous access.
+Open the address of your installation, for example `https://trove.example.com/`. trove sends you to the sign-in screen when you are not signed in and the installation has no public content.
 
 ### The sign-in screen
 
@@ -24,13 +24,13 @@ The sign-in screen shows only what your administrators configured.
 | **Sign in with** and the name of a provider | Takes you to your organization's identity provider. After you sign in there, trove returns you to the page you wanted. There is one button per configured provider |
 | **Currently unavailable** next to a provider | trove cannot reach that provider right now. Try again later or use another provider |
 | **Redirecting to the identity provider.** | trove is sending you to the provider, either after your choice or because the installation sends everyone straight there |
-| **Continue without signing in** | Opens trove anonymously. Shown only where anonymous access is allowed |
+| **Continue without signing in** | Opens trove anonymously. Shown only where some content is public |
 | **Local administrator** with **Username** and **Password** | The form of the emergency administrator account. It is not for regular users, who never have a password in trove |
 | **No sign-in method is configured.** | Ask your administrator |
 
 ### Continue without signing in
 
-Where your administrators allow anonymous access, you can use trove without an account: either through **Continue without signing in** on the sign-in screen, or directly, because trove then opens without asking you to sign in. You see only the repositories, packages and files that are open to anonymous readers, and you cannot upload, publish or delete anything. The top bar shows **Sign in** while you are anonymous.
+Where your administrators made some content **Public**, you can use trove without an account: either through **Continue without signing in** on the sign-in screen, or directly, because trove then opens without asking you to sign in. The start page lists the public projects. You see only the repositories, packages and files that are public, and you cannot upload, publish or delete anything. A package page shows the README and the documentation only when the repository's wiki is public too; otherwise those tabs are not there. The top bar shows **Sign in** while you are anonymous.
 
 ### When your session ends
 

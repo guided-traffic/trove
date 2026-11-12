@@ -93,7 +93,7 @@
               [readonly]="!canWrite()"
               [error]="problems('/entries/' + i)[0] ?? null"
               i18n-hint="@@policy.entry-principal-hint"
-              hint="user:name, group:name, sa:name, anonymous or authenticated"
+              hint="user:name, group:name or sa:name"
             />
             <div class="actions-row">
               @for (a of actions; track a) {

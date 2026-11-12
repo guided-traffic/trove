@@ -93,6 +93,14 @@ async function* advancedOpen(page: Page): AsyncGenerator<string> {
   yield 'advanced';
 }
 
+/** The closed Visibility section of a settings page, opened: where the level of the installation or of a project is chosen (R-UI-053, R-UI-054). */
+async function* visibilityOpen(page: Page): AsyncGenerator<string> {
+  yield '';
+  await page.locator('main trove-disclosure').filter({ hasText: 'Visibility' }).first().getByRole('button').first().click();
+  await expect(page.locator('main trove-visibility-level').first()).toBeVisible();
+  yield 'visibility';
+}
+
 /** The wizard asks whether the typed key is taken; a 404 means it is free. */
 const keyFree = [{ match: /^GET \/api\/v1\/projects\/[^/]+\/repositories\/renders-[a-z-]+ answered 404$/, why: 'the key check: 404 is a free key' }];
 
@@ -183,7 +191,7 @@ export const screens: readonly Screen[] = [
   { id: 'project-ci', path: `${P}/ci`, kinds: owners },
   // A project's mapping editor without an issuer in the address: the issuer select and the policy picker (Q-UI-334).
   { id: 'project-ci-mapping-new', path: `${P}/ci/mappings/new`, kinds: owners },
-  { id: 'project-settings', path: `${P}/settings`, kinds: owners },
+  { id: 'project-settings', path: `${P}/settings`, kinds: owners, walk: visibilityOpen },
 
   // The administrator's area (Q-UI-127).
   { id: 'repository-settings-oci-remote', path: `${O}/repositories/docker-hub-remote/settings`, kinds: admins },
@@ -225,5 +233,5 @@ export const screens: readonly Screen[] = [
   { id: 'admin-system-jobs', path: '/ui/admin/system/jobs', kinds: admins },
   { id: 'admin-system-backups', path: '/ui/admin/system/backups', kinds: admins },
   { id: 'admin-settings-auth', path: '/ui/admin/settings/auth', kinds: admins },
-  { id: 'admin-settings-general', path: '/ui/admin/settings/general', kinds: admins },
+  { id: 'admin-settings-general', path: '/ui/admin/settings/general', kinds: admins, walk: visibilityOpen },
 ];

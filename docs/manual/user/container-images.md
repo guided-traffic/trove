@@ -31,7 +31,7 @@ What happens: the client asks `https://trove.example.com/v2/`, is told to fetch 
 
 - **Docker** keeps the credential per host: one `docker login` covers every repository of every project on this host, and a second login to the same host replaces the first. Keep one token that covers what you pull and push.
 - **Podman** keeps the credential in its `auth.json` and falls back to the file of the Docker CLI.
-- **Anonymous pulls.** A repository that an administrator opened to anonymous readers needs no login to pull. Pushing, moving a tag and deleting always need a token.
+- **Anonymous pulls.** A repository whose artifacts are **Public** needs no login to pull. Pushing, moving a tag and deleting always need a token.
 
 Which permission each operation needs:
 

@@ -2,6 +2,7 @@ import { Component, ElementRef, computed, inject, input, signal, viewChild } fro
 import { RouterLink } from '@angular/router';
 import { Project } from '../../api/projects-api';
 import { ProjectContext } from '../../core/project-context';
+import { VisibilityIcon } from '../../shared/ui/visibility-level';
 
 /** How many matches the switcher lists at once; a longer list is narrowed by typing. */
 const SHOWN = 20;
@@ -14,7 +15,7 @@ const SHOWN = 20;
  */
 @Component({
   selector: 'trove-project-switcher',
-  imports: [RouterLink],
+  imports: [RouterLink, VisibilityIcon],
   host: {
     '(document:click)': 'outside($event)',
     '(keydown.escape)': 'escape($event)',
@@ -30,7 +31,12 @@ const SHOWN = 20;
     >
       <span class="switcher-mark" aria-hidden="true" translate="no">{{ initial() }}</span>
       <span class="switcher-text">
-        <span class="switcher-name" translate="no">{{ label() }}</span>
+        <span class="switcher-name" translate="no">
+          @if (context.current(); as project) {
+            <trove-visibility-icon [level]="project.visibility" />
+          }
+          {{ label() }}
+        </span>
         <span class="visually-hidden">&ngsp;<ng-container i18n="@@switcher.button">Switch project</ng-container></span>
       </span>
       <span class="material-icons switcher-chevron" aria-hidden="true">unfold_more</span>
@@ -93,7 +99,7 @@ export class ProjectSwitcher {
   /** The name shown in the button: the project's display name, else its key. */
   readonly label = input.required<string>();
 
-  private readonly context = inject(ProjectContext);
+  protected readonly context = inject(ProjectContext);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly trigger = viewChild.required<ElementRef<HTMLButtonElement>>('trigger');
 

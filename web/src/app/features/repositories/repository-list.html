@@ -108,6 +108,9 @@
       @for (row of list.items(); track refOf(row)) {
         <tr>
           <th scope="row" class="wrap-name">
+            @if (inProject()) {
+              <trove-visibility-icon [level]="row.visibility.artifacts" />
+            }
             <a
               [routerLink]="['/projects', row.project, 'repositories', row.key]"
               (click)="visit(refOf(row))"
@@ -138,6 +141,11 @@
           <td class="class-cell">
             <span class="class-name"><span class="material-icons" aria-hidden="true">{{ classIcon(row.class) }}</span>{{ classText(row.class) }}</span>
           </td>
+          @if (!inProject()) {
+            <td class="level-cell">
+              <trove-visibility-icon [level]="row.visibility.artifacts" />{{ levelText(row.visibility.artifacts) }}
+            </td>
+          }
           <!-- The plain user's job is to copy the address: inside a project it is a field with its share of the row (Q-UI-330). -->
           @if (inProject()) {
             <td class="address-cell">

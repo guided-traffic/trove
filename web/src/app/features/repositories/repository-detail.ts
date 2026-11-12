@@ -15,6 +15,8 @@ import { Router, RouterLink } from '@angular/router';
 import { newIdempotencyKey } from '../../api/client';
 import { ApiError, FieldProblem } from '../../api/problem';
 import { collectAll } from '../../api/pagination';
+import { RepositoryVisibility } from '../../api/repositories-api';
+import { VisibilityIcon, VisibilityLevel } from '../../shared/ui/visibility-level';
 import { ProjectsApi } from '../../api/projects-api';
 import { SelectField, SelectOption } from '../../shared/access/fields';
 import {
@@ -53,6 +55,7 @@ import { RecentRepositories } from './recent-repositories';
 import { RepositoryFields } from './repository-fields';
 import { Disclosure } from '../../shared/ui/disclosure';
 import { RepositoryGuide } from './repository-guide';
+import { RepositoryVisibilityBlock } from './repository-visibility';
 import {
   FormatMemberOf,
   RepositoryForm,
@@ -95,6 +98,8 @@ import { UpstreamSettings, upstreamTarget } from './upstream-settings';
     FormatSettings,
     RepositoryFields,
     RepositoryGuide,
+    RepositoryVisibilityBlock,
+    VisibilityIcon,
     MirrorSettings,
     MirrorStatusPanel,
     UpstreamSettings,
@@ -134,6 +139,10 @@ export class RepositoryDetail implements HasUnsavedChanges {
   protected readonly stored = signal<Repository | null>(null);
   protected readonly consumer = signal<RepositoryConsumerView | null>(null);
   protected readonly saving = signal(false);
+  /** The artifacts level, shown as an icon before the name (Q-UI-230). */
+  protected readonly artifactsLevel = computed<VisibilityLevel | null>(
+    () => (this.stored() ?? this.consumer())?.visibility?.artifacts ?? null,
+  );
   protected readonly failure = signal<ApiError | null>(null);
   protected readonly warnings = signal<readonly string[]>([]);
   protected readonly deletion = signal<JobReference | null>(null);
@@ -291,6 +300,81 @@ export class RepositoryDetail implements HasUnsavedChanges {
     this.baseline.set(stored);
     this.form.set(this.drafts.take<RepositoryForm>() ?? stored);
     this.warnings.set([]);
+  }
+
+  /** The project's level bounds the repository's (R-UI-055); unknown when the caller cannot read the project, then the server decides. */
+  protected readonly projectLevel = resource({
+    params: () => this.project(),
+    loader: async ({ params }): Promise<VisibilityLevel | null> => {
+      try {
+        return (await this.projectsApi.get(params)).value.visibility;
+      } catch {
+        return null;
+      }
+    },
+  });
+  protected readonly visibilitySaving = signal(false);
+  protected readonly visibilityFailure = signal<ApiError | null>(null);
+  protected readonly visibilityWarnings = signal<readonly string[]>([]);
+
+  /**
+   * Stores the levels of the Visibility block (R-UI-055) with the loaded `ETag`. The patch names the changed parts only and the
+   * levels are not part of the form, so other unsaved edits stay; a 412 is settled like a save (R-UI-042).
+   */
+  protected async saveVisibility(change: Partial<RepositoryVisibility>): Promise<void> {
+    if (this.visibilitySaving() || !this.stored()) return;
+    this.visibilitySaving.set(true);
+    this.visibilityFailure.set(null);
+    try {
+      await this.sendVisibility(change, this.etag);
+    } catch (e) {
+      await this.handleVisibilityError(asApiError(e), change);
+    } finally {
+      this.visibilitySaving.set(false);
+    }
+  }
+
+  private async sendVisibility(change: Partial<RepositoryVisibility>, etag: string): Promise<void> {
+    const saved = await this.api.patch(this.ref(), { visibility: change }, etag);
+    this.takeStored(saved.value, saved.etag);
+    this.visibilityWarnings.set(
+      (saved.value.warnings ?? []).filter((w) => w.code === 'public_populates_remote').map((w) => w.detail),
+    );
+    this.notifier.status($localize`:@@repo.visibility.saved:Visibility saved.`);
+  }
+
+  private async handleVisibilityError(error: ApiError, change: Partial<RepositoryVisibility>): Promise<void> {
+    if (error.status !== 412) {
+      this.visibilityFailure.set(error);
+      return;
+    }
+    let theirs: Versioned<Repository | RepositoryConsumerView>;
+    try {
+      theirs = await this.api.get(this.ref());
+    } catch (e) {
+      this.visibilityFailure.set(asApiError(e));
+      return;
+    }
+    if (isConsumerView(theirs.value)) {
+      this.visibilityFailure.set(error);
+      return;
+    }
+    const current = theirs.value.visibility;
+    const wanted = { ...current, ...change };
+    if (JSON.stringify(current) === JSON.stringify(wanted)) {
+      this.takeStored(theirs.value, theirs.etag);
+      return;
+    }
+    const decision = await this.conflicts.resolve({ mine: { ...wanted }, theirs: { ...current } });
+    if (decision === 'reload') {
+      this.adopt(theirs);
+    } else if (decision === 'overwrite') {
+      try {
+        await this.sendVisibility(change, theirs.etag);
+      } catch (e) {
+        this.visibilityFailure.set(asApiError(e));
+      }
+    }
   }
 
   protected readonly membersSaving = signal(false);

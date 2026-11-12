@@ -22,7 +22,7 @@ GitLab instance ── ID token, aud = trove's base URL ──▶ GitLab job
 The words this page uses:
 
 - **CI issuer**: a GitLab instance that trove trusts, with its validation settings. It only serves the token exchange; it is not an identity provider that people sign in with.
-- **Mapping**: an ordered rule of one issuer, made of a condition on the ID token's claims and the grants a matching job receives. Each mapping is a principal of its own: `ci:<issuer>/<mapping>` for a mapping of the whole installation, `ci:<issuer>/<projectKey>/<mapping>` for a mapping of a project. A CI token acts as its mappings: it is never a user, never part of `authenticated`, never joins a group automatically, is never a member of a project, holds no system role and no project role, and never `manage`.
+- **Mapping**: an ordered rule of one issuer, made of a condition on the ID token's claims and the grants a matching job receives. Each mapping is a principal of its own: `ci:<issuer>/<mapping>` for a mapping of the whole installation, `ci:<issuer>/<projectKey>/<mapping>` for a mapping of a project. A CI token acts as its mappings: it is never a user and never internal (it reads what its mappings grant and what is **Public**, and not a repository that is only **Internal**), never joins a group automatically, is never a member of a project, holds no system role and no project role, and never `manage`.
 - **Issuance record**: the stored link between a CI token and the verified job it was issued to.
 
 The pipeline author's side, the `id_tokens:` block and the exchange, is in [GitLab CI pipelines](../user/gitlab-ci-pipelines.md).

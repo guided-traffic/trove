@@ -1,4 +1,4 @@
-import { FormatDescriptor, Repository } from '../../api/repositories-api';
+import { FormatDescriptor, Repository, RepositoryVisibility } from '../../api/repositories-api';
 import { protocolPath } from '../../core/server-address';
 import { JsonObject } from '../../shared/merge-patch';
 import { SettingSchema, pruneDefaults } from './settings-schema';
@@ -185,7 +185,6 @@ export interface RepositoryForm {
   readonly includePatterns: string;
   readonly excludePatterns: string;
   readonly disabled: boolean;
-  readonly requireAuthentication: boolean;
   readonly hideExistence: HideExistence;
   /** The content of the member named after the format (`npm`), edited by the schema-rendered form. */
   readonly formatMember: JsonObject;
@@ -225,7 +224,6 @@ export const EMPTY_FORM: RepositoryForm = {
   includePatterns: '',
   excludePatterns: '',
   disabled: false,
-  requireAuthentication: false,
   hideExistence: 'inherit',
   formatMember: {},
   remoteMode: 'pullThrough',
@@ -248,7 +246,6 @@ export function formOf(repo: Repository): RepositoryForm {
     includePatterns: (repo.includePatterns ?? []).join('\n'),
     excludePatterns: (repo.excludePatterns ?? []).join('\n'),
     disabled: repo.disabled ?? false,
-    requireAuthentication: repo.requireAuthentication ?? false,
     hideExistence: repo.hideExistence ?? 'inherit',
     formatMember: memberOf(repo),
     remoteMode: repo.remote?.mode === 'mirror' ? 'mirror' : 'pullThrough',
@@ -339,7 +336,6 @@ export function settingsOf(form: RepositoryForm, format?: FormatMemberOf): Recor
     includePatterns: lines(form.includePatterns),
     excludePatterns: lines(form.excludePatterns),
     disabled: form.disabled,
-    requireAuthentication: form.requireAuthentication,
     hideExistence: form.hideExistence,
     ...(format && Object.keys(member).length > 0 ? { [format.name]: member } : {}),
     ...(remote ? { remote } : {}),
@@ -351,12 +347,14 @@ export function documentOf(
   cls: Repository['class'],
   format: FormatMemberOf,
   form: RepositoryForm,
+  visibility?: RepositoryVisibility,
 ): Repository {
   return {
     key: form.key,
     class: cls,
     format: format.name,
     ...settingsOf(form, format),
+    ...(visibility ? { visibility } : {}),
   };
 }
 

@@ -11,30 +11,20 @@
       <trove-error-notice [error]="e" />
     }
 
-    <form (submit)="save($event, 'anonymous')" novalidate>
+    <form (submit)="save($event, 'external')" novalidate>
       <trove-checkbox
-        [checked]="anonymousAccess()"
-        [disabled]="!canWrite() || (!s.ceilings.anonymousAllowed && !anonymousAccess())"
-        [describedBy]="!s.ceilings.anonymousAllowed ? 'anonymous-ceiling' : null"
-        (checkedChange)="anonymousAccess.set($event)"
+        [checked]="newUsersExternal()"
+        [disabled]="!canWrite()"
+        [describedBy]="'new-users-external-note'"
+        (checkedChange)="newUsersExternal.set($event)"
       >
-        <ng-container i18n="@@auth-settings.anonymous-switch">Allow requests without a credential to read what the anonymous principal may read</ng-container>
+        <ng-container i18n="@@auth-settings.new-users-external">New users are external</ng-container>
       </trove-checkbox>
-      @if (!s.ceilings.anonymousAllowed) {
-        <p id="anonymous-ceiling" class="muted">
-          <span class="material-icons" aria-hidden="true">lock</span>
-          <ng-container i18n="@@auth-settings.anonymous-ceiling">The installation's configuration does not allow anonymous access, so it cannot be switched on here.</ng-container>
-        </p>
-      }
-      @if (session.has('policies:read')) {
-        <p>
-          <a routerLink="/admin/permissions" [queryParams]="{ principal: 'anonymous' }" i18n="@@auth-settings.anonymous-link">Policies that name the anonymous principal</a>
-        </p>
-      }
+      <p id="new-users-external-note" class="muted" i18n="@@auth-settings.new-users-external-note">Users created from now on start as external users; existing users keep their flag.</p>
       @if (canWrite()) {
-        <button class="btn btn-confirm" type="submit" [disabled]="busy() || !dirtyAnonymous()">
+        <button class="btn btn-confirm" type="submit" [disabled]="busy() || !dirtyExternal()">
           <ng-container i18n="@@auth-settings.save-changes">Save changes</ng-container>
-          <span class="visually-hidden" i18n="@@auth-settings.save-anonymous"> (anonymous access)</span>
+          <span class="visually-hidden" i18n="@@auth-settings.save-new-users-external"> (new users are external)</span>
         </button>
       }
     </form>

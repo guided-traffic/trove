@@ -62,7 +62,7 @@ These apply to npm, pnpm, Yarn Berry and Yarn Classic alike. The guide's **Troub
 
 - `TROVE_TOKEN` is not set in the environment the client runs in, or is empty.
 - The credential line does not name this repository's address exactly, with its trailing slash.
-- Yarn Classic needs `always-auth=true` and Yarn Berry `npmAlwaysAuth: true` for a repository that is not open to anonymous readers.
+- Yarn Classic needs `always-auth=true` and Yarn Berry `npmAlwaysAuth: true` for a repository that is not public.
 - The token is expired, revoked, unknown or mistyped: `invalid_token`. [Create a new token](access-tokens.md#create-a-token).
 - The token works on the main address but not on another endpoint, such as one for customers: further endpoints accept only service-account tokens bound to them unless configured otherwise.
 - The owner of the token is disabled: `principal_disabled`.
@@ -169,7 +169,7 @@ Each code with its status and meaning. `GET /api/v1/problems/<code>` gives the d
 
 | Code | Status | Meaning |
 |---|---|---|
-| `credentials_required` | 401 | No credential, and the request is not open to anonymous readers |
+| `credentials_required` | 401 | No credential, and the request is not public |
 | `invalid_token` | 401 | The token is malformed, unknown, expired, revoked or not accepted on this endpoint |
 | `principal_disabled` | 401 | The owner of the credential is disabled |
 | `session_expired` | 401 | The session cookie names a session that has ended |

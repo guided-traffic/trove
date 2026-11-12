@@ -26,7 +26,7 @@
         name="principal"
         [(value)]="principalFilter"
         i18n-hint="@@policies.principal-hint"
-        hint="user:name, group:name, sa:name, anonymous or authenticated"
+        hint="user:name, group:name or sa:name"
       />
     </trove-filter-category>
     <trove-filter-category i18n-label="@@policies.repository" label="Repository" [active]="!!repositoryFilter().trim()" [expanded]="!!repositoryFilter().trim()">

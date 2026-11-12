@@ -55,10 +55,15 @@ The wizard creates a remote repository with the format's well-known upstream unl
 | **Include patterns** | `includePatterns` | empty | What the repository admits; empty admits everything |
 | **Exclude patterns** | `excludePatterns` | empty | What it refuses; an exclude wins over an include |
 | **Disabled: takes no part in resolution, download or deploy** | `disabled` | off | The repository keeps its content but serves and accepts nothing |
-| **Require authentication, even where anonymous read is granted** | `requireAuthentication` | off | Refuses requests without a credential whatever the policies say |
 | **Hide existence from callers without access** | `hideExistence` | **Use the installation setting** | **Hide: answer as if it did not exist** answers 404 to refused reads, **Do not hide: answer 403** answers 403 |
 
-For a generic repository the patterns match paths; for npm they match package names, such as `@acme/*`; for OCI they match image names, such as `team/*`; for Debian they match binary package names, such as `acme-*`. Up to 100 patterns per list; **Pattern syntax** in the form explains `*`, `**`, `?` and `\`. Changes to **Require authentication** and **Hide existence** are recorded as `authz.settings.changed` in the audit log.
+For a generic repository the patterns match paths; for npm they match package names, such as `@acme/*`; for OCI they match image names, such as `team/*`; for Debian they match binary package names, such as `acme-*`. Up to 100 patterns per list; **Pattern syntax** in the form explains `*`, `**`, `?` and `\`. Changes to **Hide existence** are recorded as `authz.settings.changed` in the audit log.
+
+### Visibility
+
+The block **Visibility** of the **Access** tab sets who reads the repository besides the members of its project and the principals a policy names, with its own **Save changes**. For a format with documentation (npm, NuGet, Ansible Galaxy) there are two groups: **Artifacts**, who can install, download and list the packages, and **Wiki**, who can read the README and the documentation; for the other formats there is one group, **Visibility**. Each group offers **Private**, **Internal** and **Public** with a sentence each ([Visibility levels](permissions.md#visibility-levels)). A level above the project's is disabled (the project is internal, so the repository cannot be public); a wiki level above the artifacts' is disabled, and choosing artifacts below the wiki lowers the wiki with them. A new repository starts at the lower of the installation's default and its project's level, with the wiki at the same level; the creation wizard sets the artifacts in its basic settings step and shows the level in its review.
+
+Saving a **Public** remote repository shows the warning that anyone can fill its cache from the upstream. The Owner of the project and holders of `repositories:write-config` may change the levels, raising needs a recent sign-in; everybody else sees them read-only. The repository list, the repository's page and the client setup show the artifacts level as an icon before the name. The levels are `visibility.artifacts` and `visibility.wiki` of the repository document; a change of either is recorded as `authz.settings.changed`.
 
 ## Format settings
 

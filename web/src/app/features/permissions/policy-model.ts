@@ -208,8 +208,6 @@ export function warningText(code: string): string {
       return $localize`:@@policy.warning.path-patterns:Path patterns on a package format: a path pattern can admit a file but not its package metadata. Prefer package-name patterns.`;
     case 'selector_matches_nothing':
       return $localize`:@@policy.warning.matches-nothing:A repository selector matches no repository yet.`;
-    case 'anonymous_populates_remote':
-      return $localize`:@@policy.warning.anonymous-remote:Anonymous read on a remote repository lets anyone fill its cache from upstream.`;
     default:
       return code;
   }

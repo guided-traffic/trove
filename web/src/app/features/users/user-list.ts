@@ -17,7 +17,8 @@ import { TroveAvatar } from '../../shared/ui/avatar';
 
 /**
  * Users (R-UI-024): username, display name, email, origin, status and last sign-in; filters text,
- * status, origin, group and administrator in the filter panel; the user name column sorts through
+ * status, origin, group, administrator and external in the filter panel, and the badge External next to the name of an external user
+ * (R-UI-056); the user name column sorts through
  * the API's `sort` parameter; cursor paging with "Load more". "Add user"
  * pre-provisions a user linked to an identity-provider identity; there are no password fields.
  */
@@ -51,6 +52,7 @@ export class UserList {
   protected readonly origin = signal('');
   protected readonly group = signal('');
   protected readonly admin = signal('');
+  protected readonly external = signal('');
   protected readonly panelOpen = signal(false);
   /** How many filters the list currently applies (not the staged values in the panel). */
   protected readonly activeCount = signal(0);
@@ -87,6 +89,11 @@ export class UserList {
     { value: 'true', label: $localize`:@@users.admin.yes:Administrators` },
     { value: 'false', label: $localize`:@@users.admin.no:Not administrators` },
   ];
+  protected readonly externalOptions: readonly SelectOption[] = [
+    { value: '', label: $localize`:@@users.any:Any` },
+    { value: 'true', label: $localize`:@@users.external.yes:External users` },
+    { value: 'false', label: $localize`:@@users.external.no:Not external` },
+  ];
   protected readonly originLabel = originLabel;
 
   constructor() {
@@ -100,6 +107,7 @@ export class UserList {
       origin: (this.origin() || undefined) as UserFilters['origin'],
       group: this.group().trim() || undefined,
       admin: this.admin() === '' ? undefined : this.admin() === 'true',
+      external: this.external() === '' ? undefined : this.external() === 'true',
     };
     this.activeCount.set(Object.values(filters).filter((v) => v !== undefined).length);
     const sort = this.sort();
@@ -119,6 +127,7 @@ export class UserList {
     this.origin.set('');
     this.group.set('');
     this.admin.set('');
+    this.external.set('');
     void this.apply();
   }
 

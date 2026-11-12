@@ -1,8 +1,10 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import { DIALOG_DATA, DialogClose, DialogRef, DialogTitle } from '../../shared/ui/dialog';
 import { newIdempotencyKey } from '../../api/client';
 import { IdentityApi } from '../../api/identity-api';
 import { ApiError } from '../../api/problem';
+import { VisibilityApi } from '../../api/visibility-api';
+import { VisibilityLevel, VisibilityLevelControl, publicUnavailableReason } from '../../shared/ui/visibility-level';
 import { PROJECT_KEY_PATTERN, Project, ProjectInput, ProjectsApi } from '../../api/projects-api';
 import { Versioned } from '../../api/repositories-api';
 import { ProjectContext } from '../../core/project-context';
@@ -19,7 +21,8 @@ export interface ProjectDialogData {
 }
 
 /**
- * Create and edit a project (R-UI-041, R-AUTHZ-026). The key is fixed at creation. A new project names its first
+ * Create and edit a project (R-UI-041, R-AUTHZ-026). The key is fixed at creation. A new project takes its visibility level from the
+ * radio group, preset to the installation's default (R-UI-054); an existing project's level changes on its settings page only. A new project names its first
  * Owners (`owners`, Q-AUTHZ-229; the caller holds `projects:write`); an edit changes the display name and the
  * description (`PUT` with `If-Match`; a 412 opens the conflict dialog of R-UI-042), by an Owner or an administrator of
  * trove. The members and their roles are changed on the project's screen, the repositories are created in the
@@ -28,7 +31,7 @@ export interface ProjectDialogData {
  */
 @Component({
   selector: 'trove-project-dialog',
-  imports: [DialogTitle, DialogClose, ErrorNotice, PrincipalPicker, TextField],
+  imports: [DialogTitle, DialogClose, ErrorNotice, PrincipalPicker, TextField, VisibilityLevelControl],
   template: `
     <h2 troveDialogTitle>
       @if (existing(); as p) {
@@ -71,6 +74,14 @@ export interface ProjectDialogData {
         />
 
         @if (!existing()) {
+          <trove-visibility-level
+            i18n-label="@@project-dialog.visibility"
+            label="Visibility level"
+            subject="project"
+            [value]="shownLevel()"
+            (valueChange)="chosenLevel.set($event)"
+            [reasons]="levelReasons()"
+          />
           <fieldset class="group">
             <legend i18n="@@project-dialog.owners">First Owners</legend>
             @if (owners().length === 0) {
@@ -155,6 +166,7 @@ export class ProjectDialog {
   private readonly context = inject(ProjectContext);
   private readonly ref = inject<DialogRef<Project, ProjectDialog>>(DialogRef);
   private readonly data = inject<ProjectDialogData>(DIALOG_DATA);
+  private readonly visibilityApi = inject(VisibilityApi);
   /** Replaced after every refusal of the create: the server stores a 4xx outcome under its key (R-API-014). */
   private idempotencyKey = newIdempotencyKey();
 
@@ -164,9 +176,27 @@ export class ProjectDialog {
   protected readonly displayName = signal(this.data.project?.value.displayName ?? '');
   protected readonly description = signal(this.data.project?.value.description ?? '');
   protected readonly owners = signal<readonly string[]>([]);
+  /** The installation's default level (R-UI-054); unknown to a caller without `settings:read`, then the server applies it. */
+  private readonly defaultLevel = signal<VisibilityLevel | null>(null);
+  private readonly publicAvailable = signal(true);
+  protected readonly chosenLevel = signal<VisibilityLevel | null>(null);
+  protected readonly shownLevel = computed<VisibilityLevel>(() => this.chosenLevel() ?? this.defaultLevel() ?? 'private');
+  protected readonly levelReasons = computed(() => (this.publicAvailable() ? {} : publicUnavailableReason()));
   protected readonly busy = signal(false);
   protected readonly error = signal<ApiError | null>(null);
   private readonly attempted = signal(false);
+
+  constructor() {
+    if (this.data.project === undefined) {
+      this.visibilityApi
+        .load()
+        .then((v) => {
+          this.defaultLevel.set(v.settings.defaultLevel);
+          this.publicAvailable.set(v.settings.publicAvailable);
+        })
+        .catch(() => undefined);
+    }
+  }
 
   protected readonly ownersLabel = $localize`:@@project-dialog.owners-label:First Owners of the project`;
 
@@ -249,7 +279,12 @@ export class ProjectDialog {
       let created: Versioned<Project>;
       try {
         created = await this.api.create(
-          { key: this.key().trim(), ...this.body(), ...(this.owners().length > 0 ? { owners: [...this.owners()] } : {}) },
+          {
+            key: this.key().trim(),
+            ...this.body(),
+            ...(this.chosenLevel() ?? this.defaultLevel() ? { visibility: this.shownLevel() } : {}),
+            ...(this.owners().length > 0 ? { owners: [...this.owners()] } : {}),
+          },
           this.idempotencyKey,
         );
       } catch (e) {

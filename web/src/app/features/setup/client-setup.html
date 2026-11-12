@@ -80,7 +80,7 @@
                 (change)="pick({ repository: refOf(r) })"
               />
               <span class="choice-text">
-                <span translate="no"><strong>{{ refOf(r) }}</strong></span>
+                <span translate="no"><trove-visibility-icon [level]="r.visibility.artifacts" /><strong>{{ refOf(r) }}</strong></span>
                 <span class="secondary">
                   {{ labelOfClass(r.class) }}
                   @if (r.class === 'virtual') {

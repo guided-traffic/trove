@@ -18,6 +18,9 @@
   <p role="status" i18n="@@repo.loading">Loading.</p>
 } @else {
   <p class="subject" translate="no">
+    @if (artifactsLevel(); as level) {
+      <trove-visibility-icon [level]="level" />
+    }
     <strong>{{ ref() }}</strong>
   </p>
 
@@ -136,6 +139,18 @@
         }
         <trove-tab [label]="tabAccess">
           <div class="tab">
+            @if (repo.visibility; as levels) {
+              <trove-repository-visibility
+                [stored]="levels"
+                [projectLevel]="projectLevel.value() ?? null"
+                [hasWiki]="format()?.wiki ?? false"
+                [canWrite]="canWrite() && repo.lifecycle !== 'deleting'"
+                [saving]="visibilitySaving()"
+                [failure]="visibilityFailure()"
+                [warnings]="visibilityWarnings()"
+                (save)="saveVisibility($event)"
+              />
+            }
             <trove-repository-fields
               section="access"
               [form]="current"

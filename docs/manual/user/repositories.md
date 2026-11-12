@@ -78,7 +78,10 @@ trove shows you only what you may read. A repository you may not read is not lis
 | Read on a repository | It appears in the **Browse** tree and, for npm, NuGet, OCI and Debian, under **Packages**; you can open its content page, download, and install from it |
 | Deploy, overwrite or delete | Upload or publish, replace, and delete, on the paths and packages your permission names |
 | The permission to read repository configuration | Every repository, the settings of every repository, and **Admin area › Repositories** |
-| Nothing, as an anonymous reader | Only the repositories open to anonymous readers, and nothing you can change |
+| Nothing, as an anonymous reader | Only the public projects and repositories, and nothing you can change |
+| Only the level **Internal** or **Public** | A project and its repositories whose level admits you: **Internal** admits every signed-in user who is not an **External user**, **Public** everyone. The projects start page lists your own projects first, then these, without a role; the level's icon (a lock, a shield, a globe) stands before the name |
+
+An administrator flags a user as external, for example a contractor: an external user sees only the projects it is a member of, what a permission grants it and what is public, and never what is only internal. The artifacts of a repository and its wiki (the README and the documentation) have a level each, so you can install a package and find no README tab; that is the wiki's level, not an error.
 
 Permissions can be narrower than a whole repository: a permission may cover only some paths or package names, and you then see only those. Ask an Owner of the repository's project if something you need is missing.
 

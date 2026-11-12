@@ -83,7 +83,7 @@ A pasted token is checked in the browser for its prefix, its length of 57 charac
 | Yarn Berry | `.yarnrc.yml` in the project (Yarn Berry does not read `.npmrc`) | `npmAuthToken: "${TROVE_TOKEN}"` |
 | Yarn Classic | `.npmrc` in the project | as npm |
 
-The npm credential line names the registry address without its scheme, so the client sends the token to this repository and to no other URL. When the repository is not open to anonymous readers, Yarn Berry needs `npmAlwaysAuth: true` and Yarn Classic `always-auth=true`, or they send the token for scoped packages only; the snippets add the switch when it is needed. An `.npmrc` for npm looks like this:
+The npm credential line names the registry address without its scheme, so the client sends the token to this repository and to no other URL. When the repository is not public, Yarn Berry needs `npmAlwaysAuth: true` and Yarn Classic `always-auth=true`, or they send the token for scoped packages only; the snippets add the switch when it is needed. An `.npmrc` for npm looks like this:
 
 ```ini
 # example: the virtual repository npm-all of the project web
@@ -95,7 +95,7 @@ and a `.yarnrc.yml` for Yarn Berry:
 
 ```yaml
 npmRegistryServer: "https://trove.example.com/api/npm/web/npm-all/"   # example
-npmAlwaysAuth: true            # only when the repository is not open to anonymous readers
+npmAlwaysAuth: true            # only when the repository is not public
 npmAuthToken: "${TROVE_TOKEN}"
 ```
 
@@ -122,7 +122,7 @@ NuGet clients take the address of the **service index**, the `v3/index.json` add
 | nuget.exe | `nuget sources add -Name trove -Source <service index> …`, or the `nuget.config` | `-Username trove -Password %TROVE_TOKEN%` (PowerShell: `$env:TROVE_TOKEN`); on Mono, Linux and macOS add `-StorePasswordInClearText` |
 | Visual Studio | The `nuget.config` next to the solution file, or Tools › NuGet Package Manager › Package Manager Settings › Package Sources | `%TROVE_TOKEN%` in the file, read from the environment Visual Studio started in; or the credential prompt (any user name, the token as the password) |
 
-The credential parts appear when the repository is not open to anonymous readers. The user name is not checked; the snippets use `trove`. On Linux and macOS NuGet cannot encrypt a stored password, so the command-line form needs `--store-password-in-clear-text`, and the token your shell expands is then written into the user-level file; the `nuget.config` form keeps the reference `%TROVE_TOKEN%`, which NuGet expands from the environment on every operating system, and can be committed. A `nuget.config` for a virtual repository looks like this:
+The credential parts appear when the repository is not public. The user name is not checked; the snippets use `trove`. On Linux and macOS NuGet cannot encrypt a stored password, so the command-line form needs `--store-password-in-clear-text`, and the token your shell expands is then written into the user-level file; the `nuget.config` form keeps the reference `%TROVE_TOKEN%`, which NuGet expands from the environment on every operating system, and can be committed. A `nuget.config` for a virtual repository looks like this:
 
 ```xml
 <?xml version="1.0" encoding="utf-8"?>
@@ -131,7 +131,7 @@ The credential parts appear when the repository is not open to anonymous readers
     <clear />
     <add key="trove" value="https://trove.example.com/api/nuget/web/nuget-all/v3/index.json" protocolVersion="3" />
   </packageSources>
-  <packageSourceCredentials>   <!-- only when the repository is not open to anonymous readers -->
+  <packageSourceCredentials>   <!-- only when the repository is not public -->
     <trove>
       <add key="Username" value="trove" />
       <add key="ClearTextPassword" value="%TROVE_TOKEN%" />

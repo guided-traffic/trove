@@ -45,7 +45,7 @@ printf 'machine %s\nlogin %s\npassword %s\n' trove.example.com/api/deb/web/deb-l
 - **Never put the token into the source line.** A source line ends up in world-readable files, in the output of `apt-get update` and in logs; APT reads credentials from `auth.conf.d` for exactly that reason.
 - **Nothing turns verification off.** The snippets use no `trusted=yes`, no `allow-insecure` and no `apt-key`, and you need none of them.
 - **The one-line form.** For systems that keep sources in `sources.list.d/*.list`, the page also shows `deb [signed-by=/etc/apt/keyrings/trove-web-deb-local.asc] https://trove.example.com/api/deb/web/deb-local/ stable main` for `/etc/apt/sources.list.d/trove-web-deb-local.list`, once the key file is installed.
-- **Anonymous reads.** A repository that an administrator opened to anonymous readers needs no credential to read: the key download has no `-u` and no credential file is written. Uploading always needs a token.
+- **Anonymous reads.** A repository whose artifacts are **Public** needs no credential to read: the key download has no `-u` and no credential file is written. Uploading always needs a token.
 - **Compare the key.** Before you trust a key file, you can compare its fingerprints with the ones the repository's **Signing keys** tab shows, through a channel you trust.
 
 Reading the index needs the read permission on the repository without a package restriction: an index lists every package of a suite, so a token narrowed to some package names can download those package files but cannot use the repository as an APT source (`404` on `dists/<suite>/InRelease`).

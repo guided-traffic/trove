@@ -1,4 +1,5 @@
 import { CdkMenu, CdkMenuItem, CdkMenuTrigger } from '@angular/cdk/menu';
+import { VisibilityIcon, levelName } from '../../shared/ui/visibility-level';
 import { DatePipe } from '@angular/common';
 import {
   Component,
@@ -58,6 +59,7 @@ import { classLabel } from './repository-wizard';
     FilterToggle,
     JobProgress,
     PageHeader,
+    VisibilityIcon,
   ],
   templateUrl: './repository-list.html',
   styleUrl: './repository-list.scss',
@@ -175,6 +177,7 @@ export class RepositoryList {
     return this.allColumns.filter((c) => {
       if (c.id === 'project' || c.id === 'activity') return admin && (c.id === 'project' || this.showActivity());
       if (c.id === 'address') return !admin;
+      if (c.id === 'visibility') return admin;
       if (c.id === 'actions-admin') return admin;
       if (c.id === 'actions') return !admin;
       return true;
@@ -205,6 +208,8 @@ export class RepositoryList {
       help: $localize`:@@repo.help.class:Local repositories hold what you upload, remote repositories fetch and cache from another registry, virtual repositories combine other repositories behind one address.`,
       width: '5rem',
     },
+    // The admin area's column: who reads the artifacts, an icon and a word (Q-UI-330); inside a project the icon stands before the name.
+    { id: 'visibility', label: $localize`:@@repo.col.visibility:Visibility`, width: '6.5rem' },
     {
       id: 'address',
       label: $localize`:@@repo.col.address:Client address`,
@@ -224,6 +229,8 @@ export class RepositoryList {
     // The admin area's row has the copy button beside the menu.
     { id: 'actions-admin', label: $localize`:@@repo.col.actions:Actions`, hideLabel: true, width: '4.5rem' },
   ];
+
+  protected readonly levelText = levelName;
 
   protected classIcon(c: RepositorySummary['class']): string {
     return c === 'local' ? 'storage' : c === 'remote' ? 'cloud_download' : 'layers';

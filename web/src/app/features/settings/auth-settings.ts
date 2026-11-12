@@ -1,7 +1,6 @@
 import { Component, DestroyRef, LOCALE_ID, computed, inject, signal } from '@angular/core';
 import { Checkbox } from '../../shared/ui/checkbox';
 import { Disclosure } from '../../shared/ui/disclosure';
-import { RouterLink } from '@angular/router';
 import {
   AuthSettings as AuthSettingsModel,
   AuthSettingsApi,
@@ -23,7 +22,7 @@ import { PageHeader } from '../../shared/ui/page-header';
 
 /** The editable form content in one object, for the draft and the conflict dialog. */
 interface Form {
-  anonymousAccess: boolean;
+  newUsersExternal: boolean;
   patDefault: string;
   patMax: string;
   satDefault: string;
@@ -32,10 +31,10 @@ interface Form {
 }
 
 /** The two groups of the document that have a save button each (Q-UI-222). */
-type Part = 'anonymous' | 'tokens';
+type Part = 'external' | 'tokens';
 
 /**
- * Authentication settings (R-UI-031, R-AUTH-040): the runtime values (anonymous access open at the top, token
+ * Authentication settings (R-UI-031, R-AUTH-040): the runtime values (the flag for new users open at the top, token
  * lifetimes per type and the expiry notice in a section) bounded by the ceilings of the installation's
  * configuration, which are shown next to them, and the read-only status of providers,
  * break-glass, sessions and client switches in a section. The two groups are one document with one ETag, and each save sends a
@@ -44,7 +43,7 @@ type Part = 'anonymous' | 'tokens';
  */
 @Component({
   selector: 'trove-auth-settings',
-  imports: [PageHeader, Checkbox, RouterLink, ErrorNotice, Needs, Disclosure, TextField],
+  imports: [PageHeader, Checkbox, ErrorNotice, Needs, Disclosure, TextField],
   templateUrl: './auth-settings.html',
   styleUrl: '../../shared/access/access.scss',
   styles: `
@@ -69,7 +68,7 @@ export class AuthSettings {
   protected readonly saveError = signal<ApiError | null>(null);
   protected readonly busy = signal(false);
 
-  protected readonly anonymousAccess = signal(false);
+  protected readonly newUsersExternal = signal(false);
   protected readonly patDefault = signal('');
   protected readonly patMax = signal('');
   protected readonly satDefault = signal('');
@@ -79,9 +78,9 @@ export class AuthSettings {
   protected readonly canWrite = computed(() => this.session.has('settings:write'));
   protected readonly settings = computed<AuthSettingsModel | null>(() => this.loaded()?.settings ?? null);
   protected readonly tokensOpen = signal(false);
-  protected readonly dirtyAnonymous = computed(() => this.dirtyPart('anonymous'));
+  protected readonly dirtyExternal = computed(() => this.dirtyPart('external'));
   protected readonly dirtyTokens = computed(() => this.dirtyPart('tokens'));
-  protected readonly dirty = computed(() => this.dirtyAnonymous() || this.dirtyTokens());
+  protected readonly dirty = computed(() => this.dirtyExternal() || this.dirtyTokens());
 
   private dirtyPart(part: Part): boolean {
     const s = this.settings();
@@ -111,7 +110,7 @@ export class AuthSettings {
 
   private formOf(s: AuthSettingsModel): Form {
     return {
-      anonymousAccess: s.anonymousAccess,
+      newUsersExternal: s.newUsersExternal,
       patDefault: toDays(s.tokens.pat.defaultTTLSeconds),
       patMax: toDays(s.tokens.pat.maxTTLSeconds),
       satDefault: toDays(s.tokens.sat.defaultTTLSeconds),
@@ -127,8 +126,8 @@ export class AuthSettings {
   }
 
   private apply(f: Form, part?: Part): void {
-    if (part !== 'tokens') this.anonymousAccess.set(f.anonymousAccess);
-    if (part === 'anonymous') return;
+    if (part !== 'tokens') this.newUsersExternal.set(f.newUsersExternal);
+    if (part === 'external') return;
     this.patDefault.set(f.patDefault);
     this.patMax.set(f.patMax);
     this.satDefault.set(f.satDefault);
@@ -138,7 +137,7 @@ export class AuthSettings {
 
   private form(): Form {
     return {
-      anonymousAccess: this.anonymousAccess(),
+      newUsersExternal: this.newUsersExternal(),
       patDefault: this.patDefault(),
       patMax: this.patMax(),
       satDefault: this.satDefault(),
@@ -151,15 +150,15 @@ export class AuthSettings {
   private diff(s: AuthSettingsModel, part?: Part): AuthSettingsPatch {
     const f = this.form();
     const patch: {
-      anonymousAccess?: boolean;
+      newUsersExternal?: boolean;
       tokens?: {
         pat?: { defaultTTLSeconds?: number; maxTTLSeconds?: number };
         sat?: { defaultTTLSeconds?: number; maxTTLSeconds?: number };
         expiryNoticeSeconds?: number;
       };
     } = {};
-    if (part !== 'tokens' && f.anonymousAccess !== s.anonymousAccess) patch.anonymousAccess = f.anonymousAccess;
-    if (part === 'anonymous') return patch;
+    if (part !== 'tokens' && f.newUsersExternal !== s.newUsersExternal) patch.newUsersExternal = f.newUsersExternal;
+    if (part === 'external') return patch;
     const tokens: NonNullable<typeof patch.tokens> = {};
     const lifetimes = (
       kind: 'pat' | 'sat',

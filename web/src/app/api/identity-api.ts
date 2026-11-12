@@ -32,6 +32,8 @@ export interface UserFilters {
   readonly origin?: User['origin'];
   readonly group?: string;
   readonly admin?: boolean;
+  /** `true` keeps the users flagged external, `false` the others (R-AUTH-044). */
+  readonly external?: boolean;
   /** `username` (default) or `-username` (R-API-010, R-UI-024). */
   readonly sort?: 'username' | '-username';
 }

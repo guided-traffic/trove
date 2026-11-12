@@ -96,7 +96,7 @@ Sessions from the web UI are accepted only where the surface holds `ui`, which i
 
 1. A token type outside `tokenTypes` (for example a personal access token on `customers`) is refused.
 2. A token bound to other endpoints is refused; with `boundTokensOnly`, an unbound token is refused too.
-3. A request without a credential is refused unless `anonymous` is `true`.
+3. A request without a credential is refused unless `anonymous` is `true`. With `anonymous: true` the visibility levels decide what it reads (**Public** only); the `anonymous` of the default endpoint is also the ceiling of **Public**: while it is `false`, no project or repository can be set to **Public** ([Visibility levels](permissions.md#visibility-levels)).
 
 A refused credential answers `401` exactly like an unknown token, so the answer does not reveal that the token is valid elsewhere. The refusal is counted in `trove_endpoint_credentials_refused_total` and recorded in the audit log as `token.rejected` with the reason `endpoint_not_accepted`.
 

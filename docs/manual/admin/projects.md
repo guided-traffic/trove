@@ -17,7 +17,8 @@ Every repository belongs to a project, and a project lets a team hold and admini
 - A repository is named outside its project as `<projectKey>/<repoKey>`, for example `web/npm-internal`: in a global permission policy, a token scope, an exposure rule and the configuration. Inside its project it is named by its key alone.
 - A project holds its repositories, its members, its permission policies, its service accounts and the GitLab CI mappings of the tier `project:<projectKey>`. The names of its policies, service accounts and CI mappings are unique within the project; the same name may exist in another project and once outside every project.
 - A project is **charged the logical size of the files it holds**: the sizes of all files in its repositories added up, each file counted in full even when another repository or another project holds the same content. The figure is `logicalBytes` in the project's representation (`GET /api/v1/projects` and `GET /api/v1/projects/<projectKey>`), shown as **Storage** on the project's **Settings** and as a column of **Admin area › Projects**. It is updated within a few seconds of an upload or a delete, and a repository that moves to another project takes its share along. The projects' figures add up to more than the object store keeps, because the store keeps shared content once; what the store keeps is the **Stored content** on the [dashboard](dashboard.md). The figure is reported only: no upload is refused because of it.
-- Only an administrator of trove (the `admin` role, which holds `projects:write`) creates and deletes projects and names their first Owners.
+- A project has a **visibility level**, **Private**, **Internal** or **Public**, which decides who besides its members and the principals a policy names can find the project and, through the levels of its repositories, read it ([Visibility levels](permissions.md#visibility-levels)). A project created without a level takes the installation's default, **Private** after installation.
+- Only an administrator of trove (the `admin` role, which holds `projects:write`) creates and deletes projects, names their first Owners and sets their visibility level.
 
 ## Members and roles
 
@@ -34,7 +35,7 @@ Each role holds what the role before it holds:
 
 On a virtual repository a role gives `read` and `manage`; a publish through a virtual repository is decided on its deployment target.
 
-- A user's role in a project is the highest role among its own membership and the memberships of its groups. A user that is no member and in no member group has no role there; the project and everything below it answer `404` to it, exactly like a project that does not exist. A member whose role is too low gets `403`.
+- A user's role in a project is the highest role among its own membership and the memberships of its groups. A user that is no member and in no member group has no role there; unless a level or a policy admits it, the project and everything below it answer `404` to it, exactly like a project that does not exist. A member whose role is too low gets `403`.
 - A role is decided from the membership when a request is evaluated, never stored as a grant. It adds to what global and project permission policies grant; the explanation of a decision names it as `role:<projectKey>:<role>`.
 - A role acts through the member's browser session and its personal access tokens, within the token's scope. The Owner's administration needs a browser session or a token with the administrator scope (`admin: true`); through a token without it, an Owner acts as a Maintainer. Service-account and CI tokens never carry a role.
 - A publish through a role makes the publishing user the package owner, as a grant does.
@@ -64,7 +65,7 @@ A member is named `user:<name>` or `group:<name>`; the role is `reader`, `develo
 | Permission policies | Create, change and delete the project's policies, granting any action to users, groups, the project's service accounts, service accounts of no project and CI mappings, never to `anonymous`, `authenticated` or an automatically joined group |
 | Service accounts | Create, change, disable, enable and delete the project's service accounts; issue and revoke their tokens within the limits below |
 | CI mappings | Manage the GitLab CI mappings of the tier `project:<projectKey>`, dry-run them and read the issuances of tokens through them ([GitLab CI federation](gitlab-ci.md)) |
-| Settings | Change the display name and the description in place with **Save changes** (`PUT /api/v1/projects/<projectKey>` with `If-Match`); **Details** shows the facts of the project and **Advanced** its deletion |
+| Settings | Change the display name and the description in place with **Save changes** (`PUT /api/v1/projects/<projectKey>` with `If-Match`); **Visibility** shows the level read-only with the reason that only an administrator of trove sets it; **Details** shows the facts of the project and **Advanced** its deletion |
 
 An Owner cannot create or delete projects, bind system roles, see global permission policies (unless it holds the permission to read policies), see or change anything of a project in which its role does not allow it, create users, groups or service accounts of no project, or add an entry for `anonymous` or `authenticated`.
 
@@ -143,15 +144,19 @@ An administrator of trove creates a project with `POST /api/v1/projects`:
 }
 ```
 
-`key` and `displayName` are required; `description` defaults to the empty string. `owners` names the users and groups that become the first Owners in the same transaction; without it the project has no Owner, and an administrator of trove adds one as a member. A key that exists answers `409 already_exists`.
+`key` and `displayName` are required; `description` defaults to the empty string; `visibility` (`private`, `internal` or `public`) defaults to the installation's default level. `owners` names the users and groups that become the first Owners in the same transaction; without it the project has no Owner, and an administrator of trove adds one as a member. A key that exists answers `409 already_exists`.
 
-`GET /api/v1/projects` lists every project to a holder of the permission to read projects, and otherwise the projects the caller is a member of, each with the caller's role. `GET /api/v1/authz/me` lists the caller's memberships under `projects`, with the role in force for the credential.
+`GET /api/v1/projects` lists every project to a holder of the permission to read projects, and otherwise the projects the caller is a member of, each with the caller's role, then the other projects the caller's level admits (internal projects to an internal user, public ones to everyone, also to a request without a credential), each without a role; `membership=true` keeps the first group. `GET /api/v1/authz/me` lists the caller's memberships under `projects`, with the role in force for the credential.
 
 Only an administrator of trove deletes a project, and only when no repository, in any state, no service account and no CI mapping belongs to it (`409 project_not_empty`). The project's permission policies are deleted with it, each through the policy store, and its member entries go.
 
+### The visibility of a project
+
+**Settings › Visibility** of the project shows the three levels as a group of radio buttons, each with its icon (a lock, a shield, a globe) and a sentence. An administrator of trove (`projects:write`) chooses a level and selects **Save changes**; the change is its own request, `PUT /api/v1/projects/<projectKey>/visibility` with `{"level": "internal"}` and the `ETag` of the project, and needs a recent sign-in. **Lowering the level asks first**: the dialog lists the repositories whose levels are above the new one and lowers them with the project, the success message names how many; raising asks nothing and does not raise any repository. The option **Public** is disabled while the installation admits no request without a credential. The **New project** dialog has the same group, preset to the installation's default. The project lists, the project switcher and the start page show the level's icon before the project's name, with the level as its accessible name. The change is recorded as `authz.project.visibility_changed` and applies on every replica within seconds.
+
 ## The Projects screen
 
-**Admin area › Projects** lists the projects you can see, with the admin area's other lists, each with the number of repositories and the **Storage** it is charged. An administrator of trove and the holders of the permission to read projects see every project, the `auditor` read-only; a member without any system role finds the projects it is a member of on the start page and has no admin area. Select a project's key to open it.
+The start page lists the projects you are a member of first, with your role, then the other projects your level admits, with none; **Your projects** shows the first group alone. A visitor without an account sees the public ones. **Admin area › Projects** lists the projects you can see, with the admin area's other lists, each with the number of repositories and the **Storage** it is charged. An administrator of trove and the holders of the permission to read projects see every project, the `auditor` read-only; a member without any system role finds the projects it is a member of on the start page and has no admin area. Select a project's key to open it.
 
 ## Where the project's screens are
 

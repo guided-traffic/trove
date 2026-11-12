@@ -23,6 +23,15 @@ import {
 } from '../../api/repositories-api';
 import { collectAll } from '../../api/pagination';
 import { ProjectsApi } from '../../api/projects-api';
+import { VisibilityApi } from '../../api/visibility-api';
+import {
+  VisibilityIcon,
+  VisibilityLevel,
+  VisibilityLevelControl,
+  aboveProjectReasons,
+  levelName,
+  lowerLevel,
+} from '../../shared/ui/visibility-level';
 import { SelectField, SelectOption } from '../../shared/access/fields';
 import { Notifier } from '../../core/notifier';
 import { AddressField } from '../../shared/address-field';
@@ -129,6 +138,8 @@ export function classHelp(cls: string): string {
     SelectField,
     FormatIconView,
     AddressField,
+    VisibilityIcon,
+    VisibilityLevelControl,
   ],
   templateUrl: './repository-wizard.html',
   styleUrl: './repository-wizard.scss',
@@ -179,6 +190,57 @@ export class RepositoryWizard implements HasUnsavedChanges {
     { value: '', label: $localize`:@@repo.wizard.project-choose:Choose a project` },
     ...(valueOf(this.projects) ?? []).map((k) => ({ value: k, label: k })),
   ]);
+
+  private readonly visibilityApi = inject(VisibilityApi);
+  /** The installation's default level; `null` for a caller without `settings:read` (a project Owner), whose creates then leave the field out. */
+  private readonly defaultLevel = resource({
+    loader: async (): Promise<VisibilityLevel | null> => {
+      // Asking without the permission is a 403 the screen already knows; the create leaves the level out then.
+      if (!this.session.has('settings:read')) return null;
+      try {
+        return (await this.visibilityApi.load()).settings.defaultLevel;
+      } catch {
+        return null;
+      }
+    },
+  });
+  /** The chosen project's level bounds the repository's; unknown when the caller cannot read it, then the server decides. */
+  private readonly projectLevel = resource({
+    params: () => this.chosenProject(),
+    loader: async ({ params }): Promise<VisibilityLevel | null> => {
+      if (params === '') return null;
+      try {
+        return (await this.projectsApi.get(params)).value.visibility;
+      } catch {
+        return null;
+      }
+    },
+  });
+  /** What the creator chose; `null` while the preset stands. */
+  private readonly artifactsChoice = signal<VisibilityLevel | null>(null);
+  /**
+   * The artifacts level of the new repository: the choice, else the lower of the default and the project's level (R-UI-055). `null`
+   * while the default is not known and nothing is chosen: the create then leaves `visibility` out and the server applies its default.
+   */
+  protected readonly artifacts = computed<VisibilityLevel | null>(() => {
+    const project = valueOf(this.projectLevel) ?? null;
+    const known = valueOf(this.defaultLevel);
+    const choice = this.artifactsChoice();
+    const level = choice ?? (known ? lowerLevel(known, project ?? 'public') : null);
+    return level === null || project === null ? level : lowerLevel(level, project);
+  });
+  protected readonly unsetNote = $localize`:@@repo.visibility.unset:Not chosen: the repository takes the default of the installation and of its project.`;
+  protected readonly artifactReasons = computed(() => aboveProjectReasons(valueOf(this.projectLevel) ?? null));
+  protected readonly artifactsLabel = computed(() =>
+    this.format()?.wiki ? $localize`:@@repo.visibility.artifacts:Artifacts` : $localize`:@@repo.visibility.single:Visibility`,
+  );
+  protected readonly artifactsName = computed(() => {
+    const level = this.artifacts();
+    return level === null ? $localize`:@@repo.review.visibility-default:Default of the installation and of the project` : levelName(level);
+  });
+  protected setArtifacts(level: VisibilityLevel): void {
+    this.artifactsChoice.set(level);
+  }
 
   /** Generated when the wizard opens and kept until it closes (R-UI-042). */
   private readonly idempotencyKey = newIdempotencyKey();
@@ -322,7 +384,9 @@ export class RepositoryWizard implements HasUnsavedChanges {
   protected readonly body = computed<Repository | null>(() => {
     const cls = this.cls();
     const member = this.member();
-    return cls && member ? documentOf(cls, member, this.form()) : null;
+    return cls && member
+      ? documentOf(cls, member, this.form(), this.artifacts() === null ? undefined : { artifacts: this.artifacts()!, wiki: this.artifacts()! })
+      : null;
   });
   /** The request as shown: a typed password is never displayed (R-UI-043). */
   protected readonly requestJson = computed(() => JSON.stringify(maskSecrets(this.body()), null, 2));

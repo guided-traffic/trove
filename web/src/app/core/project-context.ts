@@ -79,7 +79,8 @@ export class ProjectContext {
 
   constructor() {
     effect(() => {
-      const ready = this.session.authenticated();
+      // The anonymous subject reads the public projects while the installation has public content (R-UI-057).
+      const ready = this.session.authenticated() || this.session.state() === 'anonymous';
       untracked(() => {
         if (ready) void this.refresh();
         else {

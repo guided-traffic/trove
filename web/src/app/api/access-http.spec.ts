@@ -129,7 +129,7 @@ describe('access services over HTTP', () => {
 
   it('R-API-012 settings and preferences are patched with the loaded ETag', async () => {
     const { http } = setup();
-    const settings = TestBed.inject(HttpAuthSettingsApi).patch({ anonymousAccess: true }, '"100"');
+    const settings = TestBed.inject(HttpAuthSettingsApi).patch({ newUsersExternal: true }, '"100"');
     const s = http.expectOne('/api/v1/settings/auth');
     expect(s.request.headers.get('If-Match')).toBe('"100"');
     expect(s.request.headers.get('Content-Type')).toBe('application/merge-patch+json');

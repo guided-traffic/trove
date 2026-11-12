@@ -26,6 +26,35 @@
     @if (canEdit()) {
       <button class="btn btn-confirm" type="submit" [disabled]="busy() || !dirty()" i18n="@@user.save-changes">Save changes</button>
     }
+  </form>
+
+  <form (submit)="saveExternal($event)" novalidate>
+    @if (externalError(); as e) {
+      <trove-error-notice [error]="e" />
+    }
+    <trove-checkbox
+      [checked]="external()"
+      [disabled]="!canEditExternal()"
+      describedBy="external-note"
+      (checkedChange)="external.set($event)"
+    >
+      <ng-container i18n="@@user.external">External user</ng-container>
+    </trove-checkbox>
+    <p id="external-note" class="muted" i18n="@@user.external-note">
+      Sees only the projects it is a member of, what a policy grants it, and what is public. Internal projects and repositories stay hidden.
+    </p>
+    @if (!editable()) {
+      <p class="muted" i18n="@@user.external-system">The break-glass account is never external.</p>
+    }
+    @if (canEditExternal()) {
+      <button class="btn btn-confirm" type="submit" [disabled]="busy() || !externalDirty()">
+        <ng-container i18n="@@user.save-changes">Save changes</ng-container>
+        <span class="visually-hidden" i18n="@@user.save-external"> (external user)</span>
+      </button>
+    }
+  </form>
+
+  <form novalidate>
     <div class="row ids">
       <trove-text-field i18n-label="@@user.id" label="ID" name="id" [value]="u.id" [readonly]="true" />
       <trove-text-field i18n-label="@@user.origin" label="Origin" name="origin" [value]="originLabel(u.origin)" [readonly]="true" />

@@ -198,6 +198,17 @@
         </div>
       </div>
       <trove-repository-fields section="basic" [(form)]="form" [fieldErrors]="fieldErrors()" />
+      <trove-visibility-level
+        [label]="artifactsLabel()"
+        subject="artifacts"
+        [value]="artifacts() ?? 'private'"
+        (valueChange)="setArtifacts($event)"
+        [unsetNote]="artifacts() === null ? unsetNote : null"
+        [reasons]="artifactReasons()"
+      />
+      @if (format()?.wiki) {
+        <p class="hint" i18n="@@repo.wizard.visibility.wiki">The wiki starts at the same level; change it in the repository's Access tab.</p>
+      }
     }
     @case (3) {
       <h2 i18n="@@repo.wizard.access.heading">Access settings</h2>
@@ -298,15 +309,20 @@
             }
           </dd>
         }
+        <dt i18n="@@repo.review.visibility">Visibility</dt>
+        <dd>
+          @if (artifacts(); as level) {
+            <trove-visibility-icon [level]="level" />
+          }{{ artifactsName() }}
+          @if (format()?.wiki) {
+            <span class="muted" i18n="@@repo.review.visibility-wiki"> (artifacts and wiki)</span>
+          }
+        </dd>
         <dt i18n="@@repo.review.switches">Switches</dt>
         <dd>
           @if (form().disabled) {
             <span i18n="@@repo.review.disabled">Disabled.</span>
-          }
-          @if (form().requireAuthentication) {
-            <span i18n="@@repo.review.require-auth">Authentication required.</span>
-          }
-          @if (!form().disabled && !form().requireAuthentication) {
+          } @else {
             –
           }
         </dd>

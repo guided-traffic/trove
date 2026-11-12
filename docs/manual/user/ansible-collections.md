@@ -34,7 +34,7 @@ url=https://trove.example.com/api/ansible/web/ansible-local/
 ```
 
 ```shell
-# a repository that is not anonymously readable also needs the token, from the environment
+# a repository whose artifacts are not public also needs the token, from the environment
 export ANSIBLE_GALAXY_SERVER_TROVE_TOKEN="${TROVE_TOKEN}"
 ```
 

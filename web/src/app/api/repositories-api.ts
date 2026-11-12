@@ -6,6 +6,7 @@ import { Schema } from './types';
 export type Repository = Schema<'Repository'>;
 export type RepositoryConsumerView = Schema<'RepositoryConsumerView'>;
 export type RepositorySummary = Schema<'RepositorySummary'>;
+export type RepositoryVisibility = Schema<'RepositoryVisibility'>;
 export type FormatDescriptor = Schema<'FormatDescriptor'>;
 export type JobReference = Schema<'JobReference'>;
 export type RepositoryClass = Repository['class'];

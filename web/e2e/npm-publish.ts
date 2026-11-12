@@ -21,11 +21,18 @@ function tarEntry(name: string, content: Buffer): Buffer {
   return Buffer.concat([header, content, Buffer.alloc((512 - (content.length % 512)) % 512)]);
 }
 
-/** The body of an npm publish, the way the npm client sends it: the manifest and the tarball as an attachment. */
-export function npmPublishBody(repoKey: string, name: string, version: string): object {
+/**
+ * The body of an npm publish, the way the npm client sends it: the manifest and the tarball as an attachment, with a
+ * `README.md` in the tarball when `readme` is given. `project` is the project of the repository; it defaults to the one of the journeys.
+ */
+export function npmPublishBody(repoKey: string, name: string, version: string, readme?: string, project = e2eProject): object {
   const manifest = { name, version, description: 'A package of the trove browser journeys', license: 'MIT' };
   const tgz = gzipSync(
-    Buffer.concat([tarEntry('package/package.json', Buffer.from(JSON.stringify(manifest, null, 2))), Buffer.alloc(1024)]),
+    Buffer.concat([
+      tarEntry('package/package.json', Buffer.from(JSON.stringify(manifest, null, 2))),
+      ...(readme === undefined ? [] : [tarEntry('package/README.md', Buffer.from(readme))]),
+      Buffer.alloc(1024),
+    ]),
   );
   return {
     _id: name,
@@ -39,7 +46,7 @@ export function npmPublishBody(repoKey: string, name: string, version: string): 
         dist: {
           integrity: `sha512-${createHash('sha512').update(tgz).digest('base64')}`,
           shasum: createHash('sha1').update(tgz).digest('hex'),
-          tarball: `https://localhost/api/npm/${e2eProject}/${repoKey}/${name}/-/${name}-${version}.tgz`,
+          tarball: `https://localhost/api/npm/${project}/${repoKey}/${name}/-/${name}-${version}.tgz`,
         },
       },
     },

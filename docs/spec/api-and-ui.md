@@ -4554,6 +4554,8 @@ Acceptance criteria:
   project list.
 - With `endpoints.default.auth.anonymous: false` the option Public is disabled and says why.
 
+Built as [Q-UI-228](#q-ui-228--a-level-is-chosen-in-a-radio-group-of-three-each-with-its-icon-and-a-sentence): [general-settings.ts](../../web/src/app/features/settings/general-settings.ts), [visibility-level.ts](../../web/src/app/shared/ui/visibility-level.ts); tests [visibility-settings.spec.ts](../../web/src/app/features/settings/visibility-settings.spec.ts) and the journey [21-visibility.spec.ts](../../web/e2e/tests/21-visibility.spec.ts).
+
 ### R-UI-054 · The visibility of a project
 Priority: **MVP** · Covers: trove-only
 
@@ -4577,6 +4579,8 @@ Acceptance criteria:
   of `web` shows `npm-public` with the Internal icon.
 - The Owner of `web` sees the section read-only with the reason; an internal user who is no member finds `web` on the start
   page without a role.
+
+Built as Q-UI-229, Q-UI-233 to Q-UI-236: [project-settings.ts](../../web/src/app/features/projects/project-settings.ts), [project-dialog.ts](../../web/src/app/features/projects/project-dialog.ts), [projects-home.ts](../../web/src/app/features/projects/projects-home.ts); test [project-visibility.spec.ts](../../web/src/app/features/projects/project-visibility.spec.ts).
 
 ### R-UI-055 · The visibility of a repository
 Priority: **MVP** · Covers: trove-only
@@ -4602,6 +4606,8 @@ Acceptance criteria:
   Public icon, and an anonymous visitor's package page of a package in it has no README tab (R-UI-057).
 - In an Internal project the option Public of both groups is disabled with the reason.
 
+Built as Q-UI-231, Q-UI-236, Q-UI-237: [repository-visibility.ts](../../web/src/app/features/repositories/repository-visibility.ts), [repository-wizard.ts](../../web/src/app/features/repositories/repository-wizard.ts); test [repository-visibility.spec.ts](../../web/src/app/features/repositories/repository-visibility.spec.ts).
+
 ### R-UI-056 · The external flag on the user page
 Priority: **MVP** · Covers: trove-only
 
@@ -4619,6 +4625,8 @@ Acceptance criteria:
 - An administrator ticks External on `alice` and saves; the list shows her badge, `?external=true` lists her, and her next
   request to an internal repository is refused (R-AUTHZ-030).
 
+Built as Q-UI-232: [user-detail.ts](../../web/src/app/features/users/user-detail.ts), [user-list.ts](../../web/src/app/features/users/user-list.ts), [user-create-dialog.ts](../../web/src/app/features/users/user-create-dialog.ts); test [user-external.spec.ts](../../web/src/app/features/users/user-external.spec.ts).
+
 ### R-UI-057 · What the UI shows of the wiki and of public content
 Priority: **MVP** · Covers: trove-only
 
@@ -4634,6 +4642,8 @@ Acceptance criteria:
 - An anonymous visitor opens the package page of `@web/button` in `web/npm-public` (artifacts Public, wiki Internal): the
   versions and the install panel are shown, the README tab is not, and the browser made no request for the README.
 - A signed-in internal user sees the README tab on the same page.
+
+Built as Q-UI-234: [package-detail.ts](../../web/src/app/features/packages/package-detail.ts) (the README tab and its request follow `hasReadme`), [auth-guard.ts](../../web/src/app/core/auth-guard.ts), [project-context.ts](../../web/src/app/core/project-context.ts) and [login.ts](../../web/src/app/features/login/login.ts) (`publicContent`); tests in [login.spec.ts](../../web/src/app/features/login/login.spec.ts) and [package-detail.spec.ts](../../web/src/app/features/packages/package-detail.spec.ts).
 
 
 ### R-UI-040 · Builds
@@ -10460,6 +10470,91 @@ Status: **Decided by the development agent** — selected from the options below
 agent records no revisit condition.
 
 **Applied in the spec:** R-UI-056, R-UI-024.
+
+### Q-UI-233 · The visibility of a project is a section of its settings page, closed by default, with its own save
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-UI-054 puts the level "after the name and the description" on the one-column settings page of a project (Q-UI-215).
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) A settings section **Visibility** whose one-sentence summary names the level (chosen) | The page keeps the name and the description open at the top; sections fold | The page rule of Q-UI-215 and Q-UI-222: a group with a save of its own is a section; the summary tells the level without opening it | One click to change it |
+| (b) The group in the open form next to the name | One form, one save | Visible at once | The level is saved by its own operation with its own confirmation; one save for two requests would send the name along with a cascade |
+
+**Choice:** (a). The group is read-only with "Only an administrator of trove sets the visibility of a project." for everyone without `projects:write`, the Owner included.
+
+**Rationale:** The level is written through `PUT …/visibility`, not through the replace of the project, so it needs its own button and its own confirmation. The development agent records no revisit condition.
+
+**Applied in the spec:** R-UI-054.
+
+### Q-UI-234 · The start page asks the API for the memberships, and a caller redirected into its only project is a signed-in one
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-UI-054 lists the caller's projects first, then the others its level admits, and a filter "Your projects" (`membership=true`). The start route used to send a caller with one project into it.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The context holds the whole list; the memberships come first by `role`; the filter reads `membership=true` from the API while it is on; only a signed-in caller with exactly one visible project is redirected (chosen) | The anonymous subject also lists the public projects | The filter is the API's; an anonymous visitor reaches the list instead of being sent into a project it does not know | One more request while the filter is on |
+| (b) Filter the list in the browser by `role` | No request | Fewer requests | Not the parameter the spec names; the answer is the same only while the list is complete |
+
+**Choice:** (a).
+
+**Rationale:** The server owns the meaning of membership. The development agent records no revisit condition.
+
+**Applied in the spec:** R-UI-054, R-UI-057.
+
+### Q-UI-235 · Lowering a project lists a repository when its artifacts or its wiki are above the new level
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-UI-054 asks for a dialog that lists the repositories that will be lowered with their levels.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) From the project's repository list, every repository whose artifacts or wiki level is above the new level, one line each: the key, its levels and the level it ends at (chosen) | The list the server will lower, computed from what the screen already reads | The administrator sees the cascade before it happens; the answer's `lowered` is counted afterwards | A repository changed meanwhile can differ from the preview; the answer's count is the truth |
+| (b) Only the count | No list | Short | The acceptance criterion names the repository in the dialog |
+
+**Choice:** (a); the dialog says so plainly when no repository is above the new level.
+
+**Rationale:** The preview is a convenience, the server's `lowered` is authoritative. The development agent records no revisit condition.
+
+**Applied in the spec:** R-UI-054.
+
+### Q-UI-236 · A new repository and a new project start at the level the screen can name, and a caller who cannot read the default leaves the level to the server
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: the default level is read with `settings:read`; a project Owner creating a repository, or a caller with `projects:write` only, cannot read it.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The wizard presets the artifacts to the lower of the default and the project's level, `private` when the default is unreadable, and always sends the level it shows; the project and the user dialogs send the preset only when it was read or chosen, and otherwise leave the member out so that the server applies the default (chosen) | What the screen shows is what is created, in the safe direction | No creation is more open than the creator saw; no guess of a value the screen cannot read | A creator who cannot read the default and wants it must choose it |
+| (b) Always omit the level at create | The server decides | Simple | The review step could not show the level the repository will get |
+
+**Choice:** (a).
+
+**Rationale:** Showing a level that differs from the stored one would be worse than showing the safe one. The development agent records no revisit condition.
+
+**Applied in the spec:** R-UI-054, R-UI-055, R-UI-056.
+
+### Q-UI-237 · The levels of a repository are not part of its edit form, and the project header carries the level icon in the switcher
+
+Status: **Decided by the development agent** — selected from the options below; the owner reviews it at the walkthrough.
+
+Context: R-UI-055 gives the block Visibility its own Save changes inside the tabbed form that has one Save changes at the bottom; R-UI-054 shows the level before the project's name in its header.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| (a) The block saves its own patch (the changed parts only) with the loaded `ETag` and takes the stored document without touching the form, as the member editor of a virtual repository does; the project's icon stands in the switcher button before the name, and a repository's before its name outside the heading, so the heading keeps its text (chosen) | Two saves that never carry each other's edits | A level cannot be saved by accident with an unsaved description; the heading stays the page's name for assistive technology and the title | The block has its own conflict handling (412: the same dialog) |
+| (b) The levels in `RepositoryForm` and the one Save changes | One save | Fewer states | Raising a level would travel with unrelated edits; the spec asks for its own save |
+
+**Choice:** (a).
+
+**Rationale:** Follows the precedent of the members tab (Q-UI-210). The development agent records no revisit condition.
+
+**Applied in the spec:** R-UI-054, R-UI-055.
 
 ### Q-UI-270 · In the repository list the column grows to the address; the list's region scrolls sideways when it must
 

@@ -17,6 +17,67 @@
     <p class="muted source" data-testid="base-url-source">{{ baseUrlSourceText() }}</p>
   }
 
+  @if (visibility(); as v) {
+    <trove-disclosure
+      i18n-heading="@@general.visibility"
+      heading="Visibility"
+      [hint]="visibilitySummary()"
+    >
+      <form (submit)="saveVisibility($event)" novalidate>
+        @if (visibilityError(); as e) {
+          <trove-error-notice [error]="e" />
+        }
+        <trove-visibility-level
+          i18n-label="@@general.visibility.default"
+          label="Default visibility level"
+          subject="new-projects"
+          [value]="defaultLevel()"
+          (valueChange)="defaultLevel.set($event)"
+          [reasons]="publicReason()"
+          [disabled]="!canWriteVisibility()"
+        />
+        <p class="muted" i18n="@@general.visibility.default-note">
+          The default applies to projects and repositories created later.
+        </p>
+        @if (!canWriteVisibility()) {
+          <p class="muted" i18n="@@general.visibility.read-only">
+            Changing the default needs the permission security-settings:write.
+          </p>
+        }
+        <h3 i18n="@@general.visibility.public-now">Public now</h3>
+        @if (v.settings.publicObjects.projects.length === 0 && v.settings.publicObjects.repositories.length === 0) {
+          <p data-testid="public-objects" i18n="@@general.visibility.nothing-public">Nothing is public.</p>
+        } @else {
+          <ul data-testid="public-objects">
+            @for (p of v.settings.publicObjects.projects; track p) {
+              <li>
+                <a [routerLink]="['/projects', p, 'settings']" translate="no">{{ p }}</a>&ngsp;<span class="muted" i18n="@@general.visibility.project">(project)</span>
+              </li>
+            }
+            @for (r of v.settings.publicObjects.repositories; track r) {
+              <li>
+                <a [routerLink]="repositoryLink(r)" translate="no">{{ r }}</a>&ngsp;<span class="muted" i18n="@@general.visibility.repository">(repository)</span>
+              </li>
+            }
+          </ul>
+          @if (v.settings.publicObjects.truncated) {
+            <p class="muted" i18n="@@general.visibility.truncated">The lists show the first 100 of each; there are more.</p>
+          }
+        }
+        @if (canWriteVisibility()) {
+          <div class="row-actions">
+            <button class="btn btn-confirm" type="submit" [disabled]="savingVisibility() || !visibilityDirty()">
+              <ng-container i18n="@@general.save-changes">Save changes</ng-container>
+              <span class="visually-hidden" i18n="@@general.visibility.save-for"> (visibility)</span>
+            </button>
+          </div>
+        }
+      </form>
+    </trove-disclosure>
+  } @else if (visibilityLoadError(); as e) {
+    <trove-error-notice [error]="e" (retry)="loadVisibility()" />
+  }
+
   @if (stored(); as s) {
     <trove-disclosure
       i18n-heading="@@general.banner"

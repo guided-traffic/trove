@@ -87,7 +87,7 @@ describe('Package details', () => {
     expect(r.fake.readmeCalls).toEqual(['pkg_01JBQ6V7S3K9@1.4.0']);
   });
 
-  it('R-UI-007 a version without a README has no README tab, asks for none and opens on Metadata', async () => {
+  it('R-UI-007 R-UI-057 a version without a README, as for a caller who may not read the wiki, has no README tab, asks for none and opens on Metadata', async () => {
     const r = await open({ version: '1.5.0-beta.1' });
     expect(tabLabels(r)).toEqual(['Metadata', 'Files', 'Repositories', 'All versions']);
     expect(r.fake.readmeCalls).toEqual([]);

@@ -6,6 +6,8 @@ export interface ConfirmData {
   readonly title: string;
   /** Paragraphs of explanation. */
   readonly lines: readonly string[];
+  /** A list under the paragraphs, for what the action affects. */
+  readonly items?: readonly string[];
   readonly confirmLabel: string;
   /** The user must type this exactly before the action is enabled (R-UI-011, R-UI-020). */
   readonly typeToConfirm?: string;
@@ -28,6 +30,13 @@ export interface ConfirmResult {
     <div class="dialog-body">
       @for (line of data.lines; track $index) {
         <p>{{ line }}</p>
+      }
+      @if (data.items; as items) {
+        <ul class="items">
+          @for (item of items; track item) {
+            <li translate="no">{{ item }}</li>
+          }
+        </ul>
       }
       @if (data.typeToConfirm; as expected) {
         <div class="field">

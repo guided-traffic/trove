@@ -1,4 +1,5 @@
 import { CdkMenu, CdkMenuItem, CdkMenuTrigger } from '@angular/cdk/menu';
+import { VisibilityIcon, levelName } from '../../../shared/ui/visibility-level';
 import { Component, computed, effect, inject, input, resource, untracked } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import {
@@ -36,7 +37,7 @@ const SORTS: readonly ItemSort[] = ['name', '-name', 'updatedAt', '-updatedAt', 
  */
 @Component({
   selector: 'trove-repository-content',
-  imports: [FormatIconView, 
+  imports: [FormatIconView, VisibilityIcon,
     CdkMenu,
     CdkMenuItem,
     CdkMenuTrigger,
@@ -81,6 +82,7 @@ export class RepositoryContent {
   protected readonly descriptor = computed<FormatDescriptor | undefined>(() =>
     (valueOf(this.formats) ?? []).find((f) => f.name === this.repository()?.format),
   );
+  protected readonly levelText = levelName;
   protected readonly formatName = computed(() => this.descriptor()?.displayName ?? this.repository()?.format ?? '');
   protected readonly isGeneric = computed(() => this.repository()?.format === 'generic');
   protected readonly scanned = computed(() => this.descriptor()?.vulnerabilityScanning ?? false);

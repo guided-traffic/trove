@@ -1851,7 +1851,8 @@ export interface paths {
          *     the project is charged (`logicalBytes`, Q-STOR-155) and, for a member, the caller's own role in `role`. `q` matches the key and the display name case-insensitively.
          *     Every item carries the project's `visibility` (R-AUTHZ-033). A project that the caller's level admits (`internal` for an
          *     internal subject, `public` for everyone) is listed without a role (R-AUTHZ-035 rule 8); `membership=true` keeps the
-         *     projects the caller is a member of.
+         *     projects the caller is a member of. The operation is open to every caller and decides here; a caller without a credential
+         *     gets `401` while no repository's artifacts are `public`.
          */
         get: operations["listProjects"];
         put?: never;
@@ -1887,8 +1888,9 @@ export interface paths {
         };
         /**
          * Read a project
-         * @description The project with its owners, counts, logical size (`logicalBytes`, Q-STOR-155) and `ETag` (the version, R-API-012). Readable with `projects:read` and by a member
-         *     of the project; any other caller, also for a project that does not exist, gets `404`. The `ETag` is the version of the
+         * @description The project with its owners, counts, logical size (`logicalBytes`, Q-STOR-155) and `ETag` (the version, R-API-012). Readable with `projects:read`, by a member
+         *     of the project and by any caller the project's level admits (`internal` for an internal subject, `public` for every
+         *     request, R-AUTHZ-035 rule 8); any other caller, also for a project that does not exist, gets `404`. The `ETag` is the version of the
          *     fields `PUT` replaces; the body also holds members and counts, which do not move it (Q-AUTHZ-185), so the read ignores
          *     `If-None-Match` and always answers the whole body (Q-AUTHZ-202). Send the tag as `If-Match` on `PUT` and `DELETE`.
          */

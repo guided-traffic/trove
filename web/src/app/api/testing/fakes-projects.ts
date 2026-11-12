@@ -7,10 +7,12 @@ import {
   ProjectMember,
   ProjectPrincipal,
   ProjectRole,
+  ProjectVisibilityResult,
   ProjectsApi,
   PROJECT_KEY_PATTERN,
 } from '../projects-api';
 import { ApiError } from '../problem';
+import { LoadedVisibilitySettings, VisibilityApi, VisibilitySettingsPatch } from '../visibility-api';
 import { Versioned } from '../repositories-api';
 
 /*
@@ -29,6 +31,7 @@ export function sampleProject(over: Partial<Project> = {}): Project {
     key: 'web',
     displayName: 'Web platform',
     description: "The web team's repositories and partners",
+    visibility: 'private',
     owners: ['group:web-leads'],
     members: 1,
     repositories: 0,
@@ -55,6 +58,10 @@ export class FakeProjectsApi extends ProjectsApi {
   /** The `If-Match` of every replace, in order. */
   readonly ifMatch: string[] = [];
   projects: Project[] = [sampleProject()];
+  /** The level a project created without one takes (the installation's default). */
+  defaultLevel: Project['visibility'] = 'private';
+  /** The repositories the next level change lowers, as the server reports them. */
+  loweredNext: { repository: string; before: { artifacts: Project['visibility']; wiki: Project['visibility'] } }[] = [];
   principals: ProjectPrincipal[] = [
     { kind: 'user', name: 'alice', principal: 'user:alice' },
     { kind: 'user', name: 'bob', principal: 'user:bob' },
@@ -98,6 +105,7 @@ export class FakeProjectsApi extends ProjectsApi {
       const q = filters.q?.toLowerCase();
       const all = this.projects
         .filter((p) => !q || p.key.includes(q) || p.displayName.toLowerCase().includes(q))
+        .filter((p) => filters.membership !== true || p.role !== undefined)
         .sort((a, b) => (filters.sort === '-key' ? -1 : 1) * a.key.localeCompare(b.key));
       const start = cursor === null ? 0 : Number.parseInt(cursor, 10);
       const end = start + limit;
@@ -152,6 +160,7 @@ export class FakeProjectsApi extends ProjectsApi {
       key,
       displayName: input.displayName ?? key,
       description: input.description,
+      visibility: input.visibility ?? this.defaultLevel,
       owners,
       members: owners.length,
       repositories: 0,
@@ -177,6 +186,25 @@ export class FakeProjectsApi extends ProjectsApi {
     };
     this.put(next);
     return { value: next, etag: this.etag(next) };
+  }
+
+  override async setVisibility(
+    key: string,
+    level: Project['visibility'],
+    etag: string,
+  ): Promise<{ readonly project: Versioned<Project>; readonly lowered: ProjectVisibilityResult['lowered'] }> {
+    this.fail();
+    this.ifMatch.push(etag);
+    this.calls.push(`setVisibility ${key} ${level}`);
+    const current = this.find(key);
+    if (etag !== this.etag(current)) {
+      throw problem(412, 'precondition_failed', { currentEtag: this.etag(current) });
+    }
+    const next: Project = { ...current, visibility: level, version: current.version + 1 };
+    this.put(next);
+    const lowered = this.loweredNext;
+    this.loweredNext = [];
+    return { project: { value: next, etag: this.etag(next) }, lowered };
   }
 
   override async delete(key: string): Promise<void> {
@@ -247,6 +275,48 @@ function memberOf(project: string, principal: string, role: ProjectRole): Projec
   return { project, principal, kind, name: name ?? '', role };
 }
 
+export class FakeVisibilityApi extends VisibilityApi {
+  stored: LoadedVisibilitySettings = {
+    etag: '"1"',
+    settings: {
+      defaultLevel: 'private',
+      publicAvailable: true,
+      publicObjects: { projects: [], repositories: [], truncated: false },
+    },
+  };
+  readonly patches: { patch: VisibilitySettingsPatch; etag: string }[] = [];
+  failure: ApiError | null = null;
+
+  override async load(): Promise<LoadedVisibilitySettings> {
+    if (this.failure) {
+      const e = this.failure;
+      this.failure = null;
+      throw e;
+    }
+    return structuredClone(this.stored);
+  }
+
+  override async patch(patch: VisibilitySettingsPatch, etag: string): Promise<LoadedVisibilitySettings> {
+    this.patches.push({ patch, etag });
+    if (this.failure) {
+      const e = this.failure;
+      this.failure = null;
+      throw e;
+    }
+    if (etag !== this.stored.etag) throw problem(412, 'precondition_failed', { currentEtag: this.stored.etag });
+    const level = patch.defaultLevel ?? this.stored.settings.defaultLevel;
+    if (level === 'public' && !this.stored.settings.publicAvailable) throw problem(409, 'public_not_allowed');
+    this.stored = {
+      etag: `"${Number.parseInt(this.stored.etag.replaceAll('"', ''), 10) + 1}"`,
+      settings: { ...this.stored.settings, defaultLevel: level },
+    };
+    return structuredClone(this.stored);
+  }
+}
+
 export function provideProjectFakes(): Provider[] {
-  return [{ provide: ProjectsApi, useClass: FakeProjectsApi }];
+  return [
+    { provide: ProjectsApi, useClass: FakeProjectsApi },
+    { provide: VisibilityApi, useClass: FakeVisibilityApi },
+  ];
 }

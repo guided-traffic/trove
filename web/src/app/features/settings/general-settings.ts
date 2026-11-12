@@ -16,7 +16,10 @@ import { Confirm } from '../../shared/confirm-dialog';
 import { ErrorNotice } from '../../shared/error-notice';
 import { fieldErrorAt } from '../../shared/field-errors';
 import { asApiError } from '../../shared/paged-resource';
+import { RouterLink } from '@angular/router';
+import { LoadedVisibilitySettings, VisibilityApi } from '../../api/visibility-api';
 import { Checkbox } from '../../shared/ui/checkbox';
+import { VisibilityLevel, VisibilityLevelControl, publicUnavailableReason } from '../../shared/ui/visibility-level';
 import { Disclosure } from '../../shared/ui/disclosure';
 import { PageHeader } from '../../shared/ui/page-header';
 
@@ -27,7 +30,8 @@ const MESSAGE_MAX = 2000;
 const MAINTENANCE_MESSAGE_MAX = 500;
 
 /**
- * General settings (R-UI-033): the public base URL and where it comes from (read only, `GET /api/v1/system/info`), the system banner
+ * General settings (R-UI-033): the public base URL and where it comes from (read only, `GET /api/v1/system/info`), the installation's
+ * default visibility level and what is public now (R-UI-053, `/api/v1/settings/visibility`), the system banner
  * (R-OPS-025) and the read-only maintenance mode (R-OPS-024). The banner and the mode are two documents with a save each, so a
  * change of one never carries an unsaved edit of the other. Switching the mode on asks first, because it refuses every write of every
  * user until it is switched off. After a save the notice shows on this screen at once; on every other screen it appears with the
@@ -35,7 +39,7 @@ const MAINTENANCE_MESSAGE_MAX = 500;
  */
 @Component({
   selector: 'trove-general-settings',
-  imports: [PageHeader, Checkbox, ErrorNotice, Needs, SelectField, Disclosure, TextField],
+  imports: [PageHeader, Checkbox, ErrorNotice, Needs, RouterLink, SelectField, Disclosure, TextField, VisibilityLevelControl],
   templateUrl: './general-settings.html',
   styleUrl: '../../shared/access/access.scss',
   styles: `
@@ -52,6 +56,7 @@ export class GeneralSettings {
   private readonly notifier = inject(Notifier);
   private readonly confirm = inject(Confirm);
   private readonly notices = inject(BannerStore);
+  private readonly visibilityApi = inject(VisibilityApi);
   protected readonly session = inject(SessionStore);
 
   protected readonly info = signal<SystemInfo | null>(null);
@@ -74,6 +79,31 @@ export class GeneralSettings {
   protected readonly retryAfter = signal('300');
 
   protected readonly canWrite = computed(() => this.session.has('settings:write'));
+
+  protected readonly visibility = signal<LoadedVisibilitySettings | null>(null);
+  protected readonly visibilityLoadError = signal<ApiError | null>(null);
+  protected readonly visibilityError = signal<ApiError | null>(null);
+  protected readonly savingVisibility = signal(false);
+  protected readonly defaultLevel = signal<VisibilityLevel>('private');
+  /** Changing the default needs `security-settings:write` (R-API-056); `settings:write` is the banner's and the mode's. */
+  protected readonly canWriteVisibility = computed(() => this.session.has('security-settings:write'));
+  protected readonly visibilityDirty = computed(
+    () => this.visibility() !== null && this.defaultLevel() !== this.visibility()!.settings.defaultLevel,
+  );
+  protected readonly publicReason = computed<Partial<Record<VisibilityLevel, string>>>(() =>
+    this.visibility()?.settings.publicAvailable === false ? publicUnavailableReason() : {},
+  );
+  protected readonly visibilitySummary = computed(() => {
+    const level = this.visibility()?.settings.defaultLevel;
+    switch (level) {
+      case 'internal':
+        return $localize`:@@general.visibility.summary-internal:New projects are internal.`;
+      case 'public':
+        return $localize`:@@general.visibility.summary-public:New projects are public.`;
+      default:
+        return $localize`:@@general.visibility.summary-private:New projects are private.`;
+    }
+  });
 
   /** The maintenance section opens by itself while the mode is on, so that a read-only installation is seen at once. */
   protected readonly modeOpen = signal(false);
@@ -141,6 +171,44 @@ export class GeneralSettings {
     } catch (e) {
       this.loadError.set(asApiError(e));
     }
+    await this.loadVisibility();
+  }
+
+  /** Apart from the rest, so that a caller who may not read it sees its reason in the section and nothing else breaks. */
+  protected async loadVisibility(): Promise<void> {
+    this.visibilityLoadError.set(null);
+    try {
+      this.adoptVisibility(await this.visibilityApi.load());
+    } catch (e) {
+      this.visibilityLoadError.set(asApiError(e));
+    }
+  }
+
+  private adoptVisibility(v: LoadedVisibilitySettings): void {
+    this.visibility.set(v);
+    this.defaultLevel.set(v.settings.defaultLevel);
+  }
+
+  protected async saveVisibility(event: Event): Promise<void> {
+    event.preventDefault();
+    const current = this.visibility();
+    if (!current || !this.visibilityDirty() || this.savingVisibility()) return;
+    this.savingVisibility.set(true);
+    this.visibilityError.set(null);
+    try {
+      this.adoptVisibility(await this.visibilityApi.patch({ defaultLevel: this.defaultLevel() }, current.etag));
+      this.notifier.status($localize`:@@general.visibility.saved:Default visibility saved.`);
+    } catch (e) {
+      this.visibilityError.set(asApiError(e));
+    } finally {
+      this.savingVisibility.set(false);
+    }
+  }
+
+  /** The settings page of a public repository `<project>/<key>`. */
+  protected repositoryLink(name: string): string[] {
+    const [project = '', key = ''] = name.split('/');
+    return ['/projects', project, 'repositories', key, 'settings'];
   }
 
   private adoptBanner(b: BannerModel): void {

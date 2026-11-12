@@ -2,7 +2,8 @@ import { Component, computed, effect, inject, input, resource, signal, untracked
 import { Router, RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import { PackageSummary, PackagesApi } from '../../api/packages-api';
-import { Project, ProjectRole } from '../../api/projects-api';
+import { collectAll } from '../../api/pagination';
+import { Project, ProjectRole, ProjectsApi } from '../../api/projects-api';
 import { RepositoriesApi, isConsumerView } from '../../api/repositories-api';
 import { ProjectContext } from '../../core/project-context';
 import { ServerAddress } from '../../core/server-address';
@@ -11,7 +12,9 @@ import { AddressField } from '../../shared/address-field';
 import { FormatIconView } from '../../shared/format-icon';
 import { PagedResource, valueOf } from '../../shared/paged-resource';
 import { TextField } from '../../shared/access/fields';
+import { Checkbox } from '../../shared/ui/checkbox';
 import { TroveDialog } from '../../shared/ui/dialog';
+import { VisibilityIcon, levelName } from '../../shared/ui/visibility-level';
 import { DataTable, TableColumn } from '../../shared/ui/data-table';
 import { PageHeader } from '../../shared/ui/page-header';
 import { packageCommands } from '../packages/package-links';
@@ -39,7 +42,7 @@ const RECENT_SHOWN = 5;
  */
 @Component({
   selector: 'trove-projects-home',
-  imports: [RouterLink, AddressField, DataTable, FormatIconView, PageHeader, TextField],
+  imports: [RouterLink, AddressField, Checkbox, DataTable, FormatIconView, PageHeader, TextField, VisibilityIcon],
   template: `
     <trove-page-header [heading]="heading" [description]="hint">
       @if (canCreate()) {
@@ -106,6 +109,11 @@ const RECENT_SHOWN = 5;
     @if (context.projects().length > 5) {
       <trove-text-field i18n-label="@@projects.q" label="Key or name" name="q" [(value)]="q" />
     }
+    @if (session.authenticated() && hasOthers()) {
+      <trove-checkbox [checked]="onlyMine()" (checkedChange)="onlyMine.set($event)">
+        <ng-container i18n="@@projects-home.mine">Your projects</ng-container>
+      </trove-checkbox>
+    }
     <trove-data-table
       [caption]="caption"
       [columns]="columns"
@@ -121,6 +129,7 @@ const RECENT_SHOWN = 5;
             <span class="secondary" translate="no">{{ p.key }}</span>
           </th>
           <td>{{ p.description }}</td>
+          <td class="level"><trove-visibility-icon [level]="p.visibility" />{{ levelText(p.visibility) }}</td>
           <td>{{ p.role ? roleLabel(p.role) : '' }}</td>
           <td class="num">{{ p.repositories }}</td>
           <td class="num">{{ p.members }}</td>
@@ -190,7 +199,8 @@ const RECENT_SHOWN = 5;
 })
 export class ProjectsHome {
   protected readonly context = inject(ProjectContext);
-  private readonly session = inject(SessionStore);
+  protected readonly session = inject(SessionStore);
+  private readonly projectsApi = inject(ProjectsApi);
   private readonly dialog = inject(TroveDialog);
   private readonly router = inject(Router);
   private readonly packages = inject(PackagesApi);
@@ -230,14 +240,26 @@ export class ProjectsHome {
 
   /** The filter of a long project list. */
   protected readonly q = signal('');
+  protected readonly levelText = levelName;
+  protected readonly onlyMine = signal(false);
+  /** The memberships alone, from the server (`membership=true`); read only while the filter is on (R-UI-054). */
+  private readonly mine = resource({
+    params: () => (this.onlyMine() ? true : undefined),
+    loader: async () => collectAll(this.projectsApi.list({ membership: true })),
+  });
+  /** The caller sees projects it is no member of: the filter has something to do. */
+  protected readonly hasOthers = computed(() => this.context.projects().some((p) => p.role === undefined));
+  /** The caller's projects first, then the others its level admits, each group in key order. */
   protected readonly shown = computed<readonly Project[]>(() => {
     const q = this.q().trim().toLowerCase();
-    return this.context.projects().filter((p) => !q || p.key.includes(q) || p.displayName.toLowerCase().includes(q));
+    const source = this.onlyMine() ? (valueOf(this.mine) ?? []) : this.context.projects();
+    const matching = source.filter((p) => !q || p.key.includes(q) || p.displayName.toLowerCase().includes(q));
+    return [...matching.filter((p) => p.role !== undefined), ...matching.filter((p) => p.role === undefined)];
   });
   protected readonly emptyText = computed(() => {
     if (this.context.projects().length > 0) return $localize`:@@projects-home.empty-filtered:No project matches.`;
     return this.session.state() === 'anonymous'
-      ? $localize`:@@projects-home.empty-anonymous:Sign in to see your projects.`
+      ? $localize`:@@projects-home.empty-anonymous:No project is public. Sign in to see your projects.`
       : $localize`:@@projects-home.empty:You are not a member of a project yet. An Owner of a project adds you with a role.`;
   });
   protected readonly caption = $localize`:@@projects-home.caption:Your projects`;
@@ -245,6 +267,7 @@ export class ProjectsHome {
   protected readonly columns: readonly TableColumn[] = [
     { id: 'name', label: $localize`:@@projects.col.project:Project`, width: '14rem' },
     { id: 'description', label: $localize`:@@projects-home.col.description:Description` },
+    { id: 'visibility', label: $localize`:@@projects.col.visibility:Visibility`, width: '8rem' },
     {
       id: 'role',
       label: $localize`:@@projects.col.role:Your role`,
