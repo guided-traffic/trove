@@ -10628,7 +10628,10 @@ start page is the same and the admin area stays behind the Admin button. A calle
 The development agent revisits the order of the three parts once the search exists and the walkthrough shows what is used.
 
 **Applied in the spec:** R-UI-067; it raises the package suggestions of R-UI-015 for the plain user, which stays P1 until the owner
-confirms.
+confirms. Built in fix wave 1: the search finds packages (`GET /api/v1/packages?q=`, from two characters, 300 ms after the last key,
+ten results); the last five repositories opened in this browser show their address fields and **Set up client**; the projects are
+named by their display name with the key under it. A search for repositories across projects is not built: it needs a list the
+plain user may read across projects.
 
 ### Q-UI-312 · The repository list shows the plain user the repository, format, class and address; activity and maintenance actions are the power user's
 

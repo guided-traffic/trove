@@ -14637,15 +14637,6 @@
         <target>Neues Projekt</target>
       </segment>
     </unit>
-    <unit id="projects-home.hint">
-      <notes>
-        <note category="location">src/app/features/projects/projects-home.ts:29,32</note>
-      </notes>
-      <segment>
-        <source> A project holds a team&apos;s repositories, packages and access. Open one to work in it; its sidebar and the project switcher keep you there. </source>
-        <target>Ein Projekt enthält die Repositories, Pakete und Zugriffe eines Teams. Öffnen Sie eines, um darin zu arbeiten; seine Seitenleiste und der Projektwechsler halten Sie darin.</target>
-      </segment>
-    </unit>
     <unit id="projects-home.empty-filtered">
       <notes>
         <note category="location">src/app/features/projects/projects-home.ts:73</note>
@@ -16654,6 +16645,78 @@
       <segment>
         <source>When this version was published, its licences, its downloads and the repositories that hold it.</source>
         <target>Wann diese Version veröffentlicht wurde, ihre Lizenzen, ihre Downloads und die Repositories, die sie enthalten.</target>
+      </segment>
+    </unit>
+    <unit id="projects-home.find.heading">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Find a package</source>
+        <target>Ein Paket finden</target>
+      </segment>
+    </unit>
+    <unit id="projects-home.find.label">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Find a package</source>
+        <target>Ein Paket finden</target>
+      </segment>
+    </unit>
+    <unit id="projects-home.find.none">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>No package you may read matches.</source>
+        <target>Kein Paket, das Sie lesen dürfen, passt.</target>
+      </segment>
+    </unit>
+    <unit id="projects-home.find.placeholder">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Name or description, for example ui-kit</source>
+        <target>Name oder Beschreibung, zum Beispiel ui-kit</target>
+      </segment>
+    </unit>
+    <unit id="projects-home.hint-short">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Find a package, take up a repository you used before, or open a project.</source>
+        <target>Finden Sie ein Paket, nehmen Sie ein zuletzt genutztes Repository wieder auf oder öffnen Sie ein Projekt.</target>
+      </segment>
+    </unit>
+    <unit id="projects-home.projects">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Projects</source>
+        <target>Projekte</target>
+      </segment>
+    </unit>
+    <unit id="projects-home.recent">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Recently opened</source>
+        <target>Zuletzt geöffnet</target>
+      </segment>
+    </unit>
+    <unit id="projects.col.project">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Project</source>
+        <target>Projekt</target>
       </segment>
     </unit>
     <unit id="repo.col.repository">

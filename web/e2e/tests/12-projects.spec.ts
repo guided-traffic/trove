@@ -85,7 +85,8 @@ test('R-UI-041 an administrator creates a project; a member of its Owner group a
     await expect(bob.getByRole('row', { name: new RegExp(key) })).toBeVisible();
     await expectAccessible(bob, 'start page (project member)');
 
-    await bob.getByRole('link', { name: key, exact: true }).click();
+    // The start page names a project by its display name, with the key under it (Q-UI-311).
+    await bob.getByRole('link', { name: 'Journey project', exact: true }).click();
     await expect(bob).toHaveURL(new RegExp(`/projects/${key}/repositories$`));
     const nav = bob.getByRole('navigation', { name: 'Main navigation' });
     for (const entry of ['Packages', 'Browse', 'Repositories', 'Members', 'Permission policies', 'Service accounts', 'Settings']) {

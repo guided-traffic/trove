@@ -27,6 +27,7 @@ export default async function setup(): Promise<void> {
     for (const kind of ['plain', 'power', 'admin'] as const) await signIn(browser, kind);
     await seedGrants(admin);
     await publishAsPowerUser(browser);
+    for (const kind of ['plain', 'power', 'admin'] as const) await openRecent(browser, kind);
   } finally {
     await browser.close();
     await ctx.dispose();
@@ -72,6 +73,24 @@ async function signIn(browser: Browser, kind: keyof typeof kinds): Promise<void>
     await expectStatus(prefs, [200], `preferences of ${kinds[kind]}`);
     const reset = await api.patch('/api/v1/users/me/preferences', { theme: null }, { 'If-Match': prefs.headers()['etag'] ?? '*' });
     await expectStatus(reset, [200], `reset the theme of ${kinds[kind]}`);
+    await context.storageState({ path: authFile(kind) });
+  } finally {
+    await context.close();
+  }
+}
+
+/**
+ * Two repositories opened before, so that the start page shows its "Recently opened" (browser storage, kept with the session);
+ * after the grants, so that every kind may open them.
+ */
+async function openRecent(browser: Browser, kind: keyof typeof kinds): Promise<void> {
+  const context = await browser.newContext({ baseURL: edge, ignoreHTTPSErrors: true, storageState: authFile(kind) });
+  try {
+    const page = await context.newPage();
+    for (const key of ['assets', 'npm-internal']) {
+      await page.goto(`/ui/projects/${mainProject}/repositories/${key}`);
+      await expect(page.getByRole('heading', { level: 1, name: key })).toBeVisible({ timeout: 30_000 });
+    }
     await context.storageState({ path: authFile(kind) });
   } finally {
     await context.close();

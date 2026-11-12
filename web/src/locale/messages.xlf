@@ -13564,14 +13564,6 @@
         <source>New project</source>
       </segment>
     </unit>
-    <unit id="projects-home.hint">
-      <notes>
-        <note category="location">src/app/features/projects/projects-home.ts:29,32</note>
-      </notes>
-      <segment>
-        <source> A project holds a team&apos;s repositories, packages and access. Open one to work in it; its sidebar and the project switcher keep you there. </source>
-      </segment>
-    </unit>
     <unit id="projects-home.empty-filtered">
       <notes>
         <note category="location">src/app/features/projects/projects-home.ts:73</note>
@@ -16630,6 +16622,70 @@
       </notes>
       <segment>
         <source>When this version was published, its licences, its downloads and the repositories that hold it.</source>
+      </segment>
+    </unit>
+    <unit id="projects-home.find.heading">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Find a package</source>
+      </segment>
+    </unit>
+    <unit id="projects-home.find.label">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Find a package</source>
+      </segment>
+    </unit>
+    <unit id="projects-home.find.none">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>No package you may read matches.</source>
+      </segment>
+    </unit>
+    <unit id="projects-home.find.placeholder">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Name or description, for example ui-kit</source>
+      </segment>
+    </unit>
+    <unit id="projects-home.hint-short">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Find a package, take up a repository you used before, or open a project.</source>
+      </segment>
+    </unit>
+    <unit id="projects-home.projects">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Projects</source>
+      </segment>
+    </unit>
+    <unit id="projects-home.recent">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Recently opened</source>
+      </segment>
+    </unit>
+    <unit id="projects.col.project">
+      <notes>
+        <note category="location">src/app</note>
+      </notes>
+      <segment>
+        <source>Project</source>
       </segment>
     </unit>
     <unit id="repo.col.repository">

@@ -84,7 +84,8 @@ describe('The project is the context of the content (Q-UI-129)', () => {
     const { fixture, root } = await render('/', undefined, TWO);
     expect(TestBed.inject(Router).url).toBe('/projects');
     expect(root.querySelector('main h1')?.textContent?.trim()).toBe('Projects');
-    expect([...root.querySelectorAll('main tbody tr th')].map((t) => t.textContent?.trim())).toEqual(['data', 'web']);
+    // A project is named by its display name, with its key under it (Q-UI-311).
+    expect([...root.querySelectorAll('main tbody tr th .secondary')].map((t) => t.textContent?.trim())).toEqual(['data', 'web']);
     // Outside a project the sidebar is the start sidebar, without a switcher.
     expect(root.querySelector('.project-switcher')).toBeNull();
     expect(navLabels(root)).toEqual(['Projects', 'Guides']);
