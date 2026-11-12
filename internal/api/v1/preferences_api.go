@@ -17,6 +17,10 @@ import (
 // defaults at revision 1 and no row; the first write inserts revision 2. The
 // revision column user_preferences.revision is the ETag (R-API-012).
 
+// defaultKeyboardShortcuts is the value of keyboardShortcuts for a user without a row and after a patch with null: the UI's
+// single-key shortcuts are on by default (R-UI-095, Q-API-280), as the column's default is.
+const defaultKeyboardShortcuts = true
+
 type prefs struct {
 	locale, theme     string
 	keyboardShortcuts bool
@@ -37,7 +41,7 @@ func loadPreferences(ctx context.Context, db q.DBTX, userID string) (prefs, erro
 		return prefs{}, err
 	}
 	if len(rows) == 0 {
-		return prefs{revision: 1}, nil
+		return prefs{keyboardShortcuts: defaultKeyboardShortcuts, revision: 1}, nil
 	}
 	r := rows[0]
 	return prefs{locale: r.Locale, theme: r.Theme, keyboardShortcuts: r.KeyboardShortcuts, revision: r.Revision}, nil
@@ -124,6 +128,10 @@ func (in prefsPatchBody) apply(cur prefs) (prefs, error) {
 		func() error { return set(in.Locale, "/locale", &next.locale, "en", "de") },
 		func() error { return set(in.Theme, "/theme", &next.theme, "light", "dark") },
 		func() error {
+			if string(in.KeyboardShortcuts) == "null" {
+				next.keyboardShortcuts = defaultKeyboardShortcuts
+				return nil
+			}
 			b, err := patchBool(in.KeyboardShortcuts, "/keyboardShortcuts")
 			if b != nil {
 				next.keyboardShortcuts = *b

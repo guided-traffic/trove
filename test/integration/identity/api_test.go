@@ -692,6 +692,10 @@ func TestAPIOperations(t *testing.T) {
 		if g.Header.Get("ETag") != `"1"` || g.json(t)["revision"] != float64(1) || g.json(t)["locale"] != nil {
 			t.Fatalf("%v %s", g.Header, g.Body)
 		}
+		// The single-key shortcuts are on for a user who never saved a preference (R-UI-095, Q-API-280).
+		if g.json(t)["keyboardShortcuts"] != true {
+			t.Fatalf("a new user's keyboardShortcuts: %s", g.Body)
+		}
 		want(t, next().call(patch, "/api/v1/users/me/preferences", p.Secret, map[string]any{"locale": "de"}), 428, "precondition_required")
 		want(t, next().call(patch, "/api/v1/users/me/preferences", p.Secret, map[string]any{"locale": "de"}, "If-Match", `"7"`), 412, "precondition_failed")
 		rp = next().call(patch, "/api/v1/users/me/preferences", p.Secret, map[string]any{"locale": "de", "keyboardShortcuts": true}, "If-Match", `"1"`)
@@ -709,6 +713,15 @@ func TestAPIOperations(t *testing.T) {
 		}
 		if nm := next().call(get, "/api/v1/users/me/preferences", p.Secret, nil, "If-None-Match", `"3"`); nm.Status != 304 {
 			t.Fatalf("If-None-Match: %d", nm.Status)
+		}
+		// Turned off in the profile, the shortcuts stay off; null takes them back to the default, on.
+		rp = next().call(patch, "/api/v1/users/me/preferences", p.Secret, map[string]any{"keyboardShortcuts": false}, "If-Match", `"3"`)
+		if want(t, rp, 200, ""); rp.json(t)["keyboardShortcuts"] != false {
+			t.Fatalf("%s", rp.Body)
+		}
+		rp = next().call(patch, "/api/v1/users/me/preferences", p.Secret, map[string]any{"keyboardShortcuts": nil}, "If-Match", `"4"`)
+		if want(t, rp, 200, ""); rp.json(t)["keyboardShortcuts"] != true || rp.json(t)["revision"] != float64(5) {
+			t.Fatalf("%s", rp.Body)
 		}
 		// A service account has no preferences.
 		s := a.serviceAccount("pref-bot")

@@ -1308,7 +1308,7 @@ CREATE TABLE user_preferences (
   user_id            uuid PRIMARY KEY REFERENCES app_user (principal_id) ON DELETE CASCADE,  -- Q-API-15
   locale             text CHECK (locale IN ('en', 'de')),
   theme              text CHECK (theme IN ('light', 'dark')),
-  keyboard_shortcuts boolean NOT NULL DEFAULT true,  -- Q-API-280, migration 00077
+  keyboard_shortcuts boolean NOT NULL DEFAULT true,  -- Q-API-280, migration 00076
   revision           bigint  NOT NULL DEFAULT 1,
   updated_at         timestamptz NOT NULL DEFAULT now()
 );
@@ -2167,7 +2167,7 @@ Acceptance criteria:
 Priority: **MVP** · Covers: trove-only
 
 Data model ([Q-API-274](#q-api-274--package-names-a-whole-name-prefix-on-a-c-collation-b-tree-and-word-prefixes-on-a-gin-tsvector-without-pg_trgm)),
-in migration `00077_search.sql`:
+in migration `00076_search.sql`:
 
 ```sql
 ALTER TABLE packages
@@ -2183,12 +2183,17 @@ How each kind is read ([Q-API-273](#q-api-273--repositories-are-matched-over-the
 |---|---|---|---|
 | repository | the repositories of the request's grant index, in memory; no statement | — | every active repository, 10,000 in the reference environment ([architecture.md](architecture.md) R-ARCH-027 P-15) |
 | project | one statement over `project`, as the project list | none | every project |
-| package | statement A: names that start with `q` (`lower(p.name) COLLATE "C" LIKE <escaped q>%`) in the repositories the caller reads whole or in part, ordered by the same expression, at most 200 rows; statement B, only when A found fewer than `limit + 1` packages: names whose words begin with the words of `q` (`p.name_words @@ to_tsquery('simple', 'w1:* & w2:*')`), without A's rows, at most 200 rows. Every row needs a live, served version: `EXISTS` over `package_version_listing` (`package_versions_live`), the withheld versions of the formats as `GET /api/v1/packages` | A: `packages_name_lower`; B: `packages_name_words` | 400 candidate rows, one served-version check each |
-| user, group | one statement each over `principal` with `app_user` or `user_group`, `kind` fixed, `strpos` on the lower-cased columns | none (`principal` is unique on `kind, name`) | every user or group |
+| package | statement A: names that start with `q` in the repositories the caller reads whole or in part, as the range `low <= lower(p.name) COLLATE "C" < high`, where `low` is `q` and `high` the least string above every string that starts with `q`, ordered by the same expression, at most 200 rows; statement B, only when A found fewer than `limit + 1` readable packages: names whose words begin with the words of `q` (`p.name_words @@ to_tsquery('simple', 'w1:* & w2:*')`), without A's rows, at most 200 rows. Every row needs a live, served version: `EXISTS` over `package_version_listing` (`package_versions_live`), without the withheld versions of the formats, read as `GET /api/v1/packages` reads them. Both run in one transaction after `SET LOCAL plan_cache_mode = force_custom_plan` | A: `packages_name_lower`; B: `packages_name_words` | 400 candidate rows, one served-version check each |
+| user, group | one statement each over `principal` with `app_user` or `user_group`, `kind` fixed, `strpos` on the lower-cased columns, ranked in the statement and cut at `limit + 1` | none (`principal` is unique on `kind, name`) | every user or group |
 
 - The words of a tsquery are runs of `a` to `z` and `0` to `9` taken from `q`, so no operator of the tsquery syntax reaches the
-  database; `%`, `_` and `\` of `q` are escaped in the `LIKE` pattern.
-- A request costs a fixed number of statements, independent of the number of matches and of the rows read.
+  database; the name prefix is two bound values, not a pattern, so no character of `q` is an operator there either.
+- Each package statement is planned for its text: a prepared statement may otherwise take a generic plan after its fifth run,
+  and a generic plan cannot know whether `q` makes the word index or the name order the cheaper read (it chose a walk over every
+  package for a rare word).
+- A request costs at most a fixed number of statements, independent of the number of matches and of the rows read: the project
+  statement, the user and group statements for the kinds asked, and for packages the withheld query of each format that has one,
+  the plan setting, statement A and, when A leaves room, statement B.
 - trove does not create `pg_trgm` (migration 00017), so an infix inside a word of a name (`it` in `ui-kit`) is not suggested; the
   results page's `GET /api/v1/packages?q=` finds it.
 

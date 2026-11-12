@@ -897,6 +897,7 @@ type Package struct {
 	Attributes  json.RawMessage
 	RevSeq      int64
 	CreatedAt   pgtype.Timestamptz
+	NameWords   interface{}
 }
 
 type PackageOwner struct {
